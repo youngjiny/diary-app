@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.0 - OpenAI 기능 제거 최종본)
+# diary_analyzer.py (v7.1 - UI 렌더링 안정화 최종본)
 
 import streamlit as st
 import gspread
@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 import joblib
 import random
-# import openai <- OpenAI 라이브러리 삭제
 
 # --- 1. 기본 설정 ---
 MODEL_PATH = Path("sentiment_model.pkl")
@@ -41,7 +40,7 @@ def get_gsheets_connection():
     try:
         if "connections" in st.secrets and "gsheets" in st.secrets.connections:
             creds_dict = st.secrets["connections"]["gsheets"]
-            scope = ['https.spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+            scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
             credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
             client = gspread.authorize(credentials)
             return client
@@ -51,6 +50,7 @@ def get_gsheets_connection():
         return None
 
 def analyze_diary_ml(model, vectorizer, text):
+    # ... (내용 변경 없음)
     if not model or not vectorizer: return None, None
     sentences = re.split(r'[.?!]', text); sentences = [s.strip() for s in sentences if s.strip()]
     time_scores = { t: {e: 0 for e in EMOTIONS} for t in TIMES }
@@ -67,6 +67,7 @@ def analyze_diary_ml(model, vectorizer, text):
     return time_scores, analysis_results
 
 def recommend(final_emotion):
+    # ... (내용 변경 없음)
     recommendations = {
         "행복": {"책": ["기분을 관리하면 인생이 관리된다"], "음악": ["악뮤 - DINOSAUR"], "영화": ["월터의 상상은 현실이 된다"]},
         "사랑": {"책": ["사랑의 기술"], "음악": ["폴킴 - 모든 날, 모든 순간"], "영화": ["어바웃 타임"]},
@@ -78,6 +79,7 @@ def recommend(final_emotion):
     return recommendations.get(final_emotion, {"책": [], "음악": [], "영화": []})
 
 def save_feedback_to_gsheets(client, feedback_df):
+    # ... (내용 변경 없음)
     try:
         spreadsheet = client.open("diary_app_feedback")
         worksheet = spreadsheet.worksheet("Sheet1")
@@ -91,13 +93,11 @@ def save_feedback_to_gsheets(client, feedback_df):
     except Exception as e:
         st.error(f"피드백 저장 중 오류 발생: {e}")
 
-# ⭐️ AI 생성 함수 대신, 기존의 다양한 문장 조립 방식으로 변경
 def generate_random_diary():
-    """다양하고 긴 테스트용 랜덤 일기를 생성하는 함수"""
+    # ... (내용 변경 없음)
     morning_starts = [ "아침 일찍 일어나 상쾌하게 하루를 시작했다.", "늦잠을 자서 허둥지둥 출근 준비를 했다.", "오늘은 재택근무라 여유롭게 아침을 맞이했다.", "아침부터 비가 와서 그런지 기분이 조금 가라앉았다." ]
-    midday_events = [ "점심으로 먹은 파스타가 정말 맛있어서 기분이 좋았다.", "동료에게 칭찬을 들어서 뿌듯했다.", "생각보다 일이 일찍 끝나서 잠시 휴식을 즐겼다.", "카페에서 마신 커피가 유난히 향긋해서 기분이 전환됐다.", "오랜만에 친구와 점심 약속을 잡고 즐겁게 수다를 떨었다.", "오후 회의가 너무 길어져서 진이 빠졌다.", "사소한 실수 때문에 팀장님께 지적을 받아서 속상했다.", "갑자기 처리해야 할 급한 업무가 생겨서 정신없이 바빴다.", "점심을 급하게 먹었더니 속이 더부룩하고 힘들었다.", "믿었던 동료와 의견 다툼이 있어서 마음이 상했다.", "오후 내내 조용히 내 업무에만 집중했다.", "오랜만에 서점에 들러서 책 구경을 했다.", "다음 주 계획을 미리 세우며 시간을 보냈다." ]
+    midday_events = [ "점심으로 먹은 파스타가 정말 맛있어서 기분이 좋았다.", "동료에게 칭찬을 들어서 뿌듯했다.", "생각보다 일이 일찍 끝나서 잠시 휴식을 즐겼다.", "카페에서 마신 커피가 유난히 향긋해서 기분이 전환됐다.", "오랜만에 친구와 점심 약속을 잡고 즐겁게 수다를 떨었다.", "오후 회의가 너무 길어져서 진이 빠졌다.", "사소한 실수 때문에 팀장님께 지적을 받아서 속상했다.", "갑작스러운 업무가 생겨 정신없이 바빴다.", "점심을 급하게 먹었더니 속이 더부룩하고 힘들었다.", "믿었던 동료와 의견 다툼이 있어서 마음이 상했다.", "오후 내내 조용히 내 업무에만 집중했다.", "오랜만에 서점에 들러서 책 구경을 했다.", "다음 주 계획을 미리 세우며 시간을 보냈다." ]
     evening_conclusions = [ "퇴근 후 운동을 하고 나니 몸은 힘들었지만 기분은 상쾌했다.", "자기 전 본 영화가 너무 감동적이어서 여운이 남는다.", "저녁에 맛있는 음식을 먹으며 하루의 스트레스를 풀었다.", "하루 종일 힘들었는데, 자기 전 들은 음악 덕분에 마음이 편안해졌다.", "별일 없이 무난하게 하루가 마무리되었다." ]
-    
     diary_parts = []
     diary_parts.append(random.choice(morning_starts))
     num_midday_events = random.randint(1, 3)
@@ -106,7 +106,6 @@ def generate_random_diary():
     diary_parts.append(random.choice(evening_conclusions))
     return " ".join(diary_parts)
 
-# --- 3. UI 로직 (콜백 함수 정의) ---
 def handle_random_click():
     st.session_state.diary_text = generate_random_diary()
     st.session_state.analysis_results = None
@@ -122,33 +121,37 @@ def handle_analyze_click(model, vectorizer):
             _, results = analyze_diary_ml(model, vectorizer, diary_content)
             st.session_state.analysis_results = results
 
-# --- 4. Streamlit UI 구성 ---
+# --------------------------------------------------------------------------
+# ⭐️⭐️⭐️ UI 코드 구조 변경 ⭐️⭐️⭐️
+# --------------------------------------------------------------------------
+
+# --- 3. Streamlit UI 구성 (입력 부분) ---
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.0)")
+st.title("📊 하루 감정 분석 리포트 (v7.1)")
 
 model, vectorizer = load_ml_resources()
 
 if 'diary_text' not in st.session_state: st.session_state.diary_text = ""
 if 'analysis_results' not in st.session_state: st.session_state.analysis_results = None
 
+# UI의 핵심인 입력창과 버튼을 무조건 먼저 보여줍니다.
 col1, col2 = st.columns([3, 1])
 with col1:
     st.text_area("오늘의 일기를 시간의 흐름에 따라 작성해보세요:", key='diary_text', height=250)
 with col2:
     st.write(" "); st.write(" ")
-    # ⭐️ 버튼 이름 원래대로 변경
     st.button("🔄 랜덤 일기 생성", on_click=handle_random_click)
     st.button("🔍 내 하루 감정 분석하기", type="primary", on_click=handle_analyze_click, args=(model, vectorizer))
 
+# --- 4. 분석 결과 표시 ---
+# '분석하기' 버튼이 눌려서 st.session_state.analysis_results에 결과가 있을 때만 이 부분을 실행합니다.
 if st.session_state.analysis_results:
-    # ... (이하 분석 결과, 추천, 피드백 UI는 이전과 동일)
-    if model is None or vectorizer is None:
-        st.error("모델 파일을 불러오는 데 실패했습니다. GitHub 저장소에 pkl 파일이 있는지 확인해주세요.")
-    else:
+    if model and vectorizer:
         scores_data, _ = analyze_diary_ml(model, vectorizer, st.session_state.diary_text)
         df_scores = pd.DataFrame(scores_data).T
         if df_scores.sum().sum() > 0:
             st.subheader("🕒 시간대별 감정 분석 결과")
+            # (이하 시각화 및 추천 UI는 이전과 동일)
             final_emotion = df_scores.sum().idxmax()
             res_col1, res_col2 = st.columns([1.2, 1])
             with res_col1:
@@ -172,7 +175,7 @@ if st.session_state.analysis_results:
                 st.write("🎵 **이런 음악도 들어보세요?**")
                 for item in recs['음악']: st.write(f"- {item}")
             with rec_col3:
-                st.write("🎬 **이런 영화/드라마도 추천해요?**")
+                st.write("🎬 **이런 영화/드라마도 추천해요!**")
                 for item in recs['영화']: st.write(f"- {item}")
             st.divider()
             st.subheader("🔍 분석 결과 피드백")
@@ -183,10 +186,8 @@ if st.session_state.analysis_results:
                 with cols[0]:
                     correct_time = st.radio("이 문장의 시간대는?", TIMES, index=TIMES.index(result['predicted_time']), key=f"time_{i}", horizontal=True)
                 with cols[1]:
-                    try:
-                        emotion_index = EMOTIONS.index(result['predicted_emotion'])
-                    except ValueError:
-                        emotion_index = 0
+                    try: emotion_index = EMOTIONS.index(result['predicted_emotion'])
+                    except ValueError: emotion_index = 0
                     correct_emotion = st.selectbox("이 문장의 진짜 감정은?", EMOTIONS, index=emotion_index, key=f"emotion_{i}")
                 feedback_data.append({'text': result['sentence'], 'label': correct_emotion, 'time': correct_time})
                 st.write("---")
@@ -203,9 +204,11 @@ if st.session_state.analysis_results:
                         save_feedback_to_gsheets(client, final_feedback_df)
                         st.session_state.analysis_results = None; st.rerun()
                     else: st.info("수정된 내용이 없네요. AI가 잘 맞췄나 보네요! 😄")
-                else:
-                    st.error("Google Sheets에 연결할 수 없습니다. Secrets 설정을 확인해주세요.")
+                else: st.error("Google Sheets에 연결할 수 없습니다.")
 
+# --- 5. 피드백 저장 현황 보기 ---
+# 모든 UI 요소가 그려진 후, 맨 마지막에 실행됩니다.
+st.divider()
 with st.expander("피드백 저장 현황 보기 (Google Sheets)"):
     client = get_gsheets_connection()
     if client:
@@ -213,9 +216,13 @@ with st.expander("피드백 저장 현황 보기 (Google Sheets)"):
             spreadsheet = client.open("diary_app_feedback")
             worksheet = spreadsheet.worksheet("Sheet1")
             df = pd.DataFrame(worksheet.get_all_records())
-            st.dataframe(df)
+            st.dataframe(df.tail()) # 최근 5개만 보여주도록 tail() 추가
             st.info(f"현재 총 **{len(df)}개**의 데이터가 저장되어 있습니다.")
-        except Exception:
-            st.error("데이터를 불러오는 데 실패했습니다. Secrets, Google Sheets 공유/시트이름 설정을 확인해주세요.")
+        except gspread.exceptions.SpreadsheetNotFound:
+            st.error("Google Sheets에서 'diary_app_feedback' 파일을 찾을 수 없습니다. 파일 이름을 확인해주세요.")
+        except gspread.exceptions.WorksheetNotFound:
+            st.error("스프레드시트에서 'Sheet1' 워크시트를 찾을 수 없습니다. 시트 이름을 확인해주세요.")
+        except Exception as e:
+            st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
     else:
-        st.error("Google Sheets에 연결할 수 없습니다. Secrets 설정을 확인해주세요.")
+        st.error("Google Sheets에 연결할 수 없습니다. Secrets 설정을 다시 확인해주세요.")
