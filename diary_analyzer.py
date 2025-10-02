@@ -1,4 +1,4 @@
-# diary_analyzer.py (v6.3 - 6가지 감정 최종 버전)
+# diary_analyzer.py (v6.4 - OpenAI 연동 최종본)
 
 import streamlit as st
 import gspread
@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 import joblib
 import random
+import openai
 
 # --- 1. 기본 설정 ---
 MODEL_PATH = Path("sentiment_model.pkl")
@@ -22,7 +23,6 @@ try:
 except FileNotFoundError:
     st.warning("Malgun Gothic 폰트를 찾을 수 없어 그래프의 한글이 깨질 수 있습니다.")
 
-# ⭐️ 감정을 6가지로 변경
 EMOTIONS = ["행복", "사랑", "슬픔", "분노", "힘듦", "놀람"]
 TIMES = ["아침", "점심", "저녁"]
 TIME_KEYWORDS = { "아침": ["아침", "오전", "출근", "일어나서"], "점심": ["점심", "낮", "점심시간"], "저녁": ["저녁", "오후", "퇴근", "밤", "새벽", "자기 전", "꿈"],}
@@ -64,7 +64,6 @@ def analyze_diary_ml(model, vectorizer, text):
     return time_scores, analysis_results
 
 def recommend(final_emotion):
-    # ⭐️ 6가지 감정에 맞게 추천 목록 업데이트
     recommendations = {
         "행복": {"책": ["기분을 관리하면 인생이 관리된다"], "음악": ["악뮤 - DINOSAUR"], "영화": ["월터의 상상은 현실이 된다"]},
         "사랑": {"책": ["사랑의 기술"], "음악": ["폴킴 - 모든 날, 모든 순간"], "영화": ["어바웃 타임"]},
@@ -89,14 +88,48 @@ def save_feedback_to_gsheets(client, feedback_df):
     except Exception as e:
         st.error(f"피드백 저장 중 오류 발생: {e}")
 
-def generate_random_diary():
+def generate_simple_diary():
+    """예비용 간단한 랜덤 일기 생성 함수"""
     morning = ["아침에 상쾌하게 일어났다.", "출근길 지하철에 사람이 너무 많아 힘들었다."]
     afternoon = ["점심으로 맛있는 파스타를 먹어서 기분이 좋았다.", "갑작스러운 소식을 듣고 너무 놀랐다."]
     evening = ["퇴근하고 운동을 하니 개운했다.", "자기 전에 본 영화가 정말 감동적이고 사랑스러웠다."]
     return f"{random.choice(morning)} {random.choice(afternoon)} {random.choice(evening)}"
 
+def generate_diary_with_llm():
+    """생성 AI를 이용한 새로운 일기 생성 함수"""
+    try:
+        openai.api_key = st.secrets["OPENAI_API_KEY"]
+        emotion_list = ["행복", "사랑", "슬픔", "분노", "힘듦", "놀람"]
+        selected_emotions = random.sample(emotion_list, 2)
+        
+        prompt = (
+            f"당신은 사용자의 감정을 잘 표현하는 일기 작성 전문가입니다. "
+            f"'{selected_emotions[0]}'과(와) '{selected_emotions[1]}'의 감정이 자연스럽게 드러나는 "
+            f"3~4 문장 길이의 일기를 한 편 작성해주세요. "
+            f"답변은 다른 부가 설명 없이 오직 일기 내용만 포함해야 합니다."
+        )
+        
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that writes diary entries."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.8,
+            max_tokens=200
+        )
+        
+        diary_content = response.choices[0].message.content
+        return diary_content.strip()
+    except Exception as e:
+        st.error(f"AI 일기 생성 중 오류 발생: {e}")
+        st.warning("예비용 랜덤 일기 생성기를 사용합니다.")
+        return generate_simple_diary()
+
+# --- 3. UI 로직 (콜백 함수 정의) ---
 def handle_random_click():
-    st.session_state.diary_text = generate_random_diary()
+    with st.spinner("AI가 새로운 일기를 창작하고 있습니다..."):
+        st.session_state.diary_text = generate_diary_with_llm()
     st.session_state.analysis_results = None
 
 def handle_analyze_click(model, vectorizer):
@@ -110,9 +143,9 @@ def handle_analyze_click(model, vectorizer):
             _, results = analyze_diary_ml(model, vectorizer, diary_content)
             st.session_state.analysis_results = results
 
-# --- 3. Streamlit UI 구성 ---
+# --- 4. Streamlit UI 구성 ---
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v6.3)")
+st.title("📊 하루 감정 분석 리포트 (v6.4)")
 
 model, vectorizer = load_ml_resources()
 
@@ -124,7 +157,7 @@ with col1:
     st.text_area("오늘의 일기를 시간의 흐름에 따라 작성해보세요:", key='diary_text', height=250)
 with col2:
     st.write(" "); st.write(" ")
-    st.button("🔄 랜덤 일기 생성", on_click=handle_random_click)
+    st.button("🔄 AI로 일기 생성", on_click=handle_random_click, help="OpenAI API를 이용해 새로운 일기를 자동으로 생성합니다.")
     st.button("🔍 내 하루 감정 분석하기", type="primary", on_click=handle_analyze_click, args=(model, vectorizer))
 
 if st.session_state.analysis_results:
@@ -169,11 +202,10 @@ if st.session_state.analysis_results:
                 with cols[0]:
                     correct_time = st.radio("이 문장의 시간대는?", TIMES, index=TIMES.index(result['predicted_time']), key=f"time_{i}", horizontal=True)
                 with cols[1]:
-                    # ⭐️ 6가지 감정 중 없는 감정이 예측되었을 경우를 대비한 예외 처리
                     try:
                         emotion_index = EMOTIONS.index(result['predicted_emotion'])
                     except ValueError:
-                        emotion_index = 0 # 없는 감정이면 첫 번째 감정(행복)을 기본값으로
+                        emotion_index = 0
                     correct_emotion = st.selectbox("이 문장의 진짜 감정은?", EMOTIONS, index=emotion_index, key=f"emotion_{i}")
                 feedback_data.append({'text': result['sentence'], 'label': correct_emotion, 'time': correct_time})
                 st.write("---")
