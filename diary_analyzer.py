@@ -1,4 +1,4 @@
-# diary_analyzer.py (v6.4 - OpenAI 연동 최종본)
+# diary_analyzer.py (v6.5 - 디버깅 기능 추가)
 
 import streamlit as st
 import gspread
@@ -39,15 +39,19 @@ def load_ml_resources():
 @st.cache_resource
 def get_gsheets_connection():
     try:
-        creds_dict = st.secrets["connections"]["gsheets"]
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        client = gspread.authorize(credentials)
-        return client
+        if "connections" in st.secrets and "gsheets" in st.secrets.connections:
+            creds_dict = st.secrets["connections"]["gsheets"]
+            scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+            credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
+            client = gspread.authorize(credentials)
+            return client
+        else:
+            return None
     except Exception:
         return None
 
 def analyze_diary_ml(model, vectorizer, text):
+    # ... (이전과 동일)
     if not model or not vectorizer: return None, None
     sentences = re.split(r'[.?!]', text); sentences = [s.strip() for s in sentences if s.strip()]
     time_scores = { t: {e: 0 for e in EMOTIONS} for t in TIMES }
@@ -64,6 +68,7 @@ def analyze_diary_ml(model, vectorizer, text):
     return time_scores, analysis_results
 
 def recommend(final_emotion):
+    # ... (이전과 동일)
     recommendations = {
         "행복": {"책": ["기분을 관리하면 인생이 관리된다"], "음악": ["악뮤 - DINOSAUR"], "영화": ["월터의 상상은 현실이 된다"]},
         "사랑": {"책": ["사랑의 기술"], "음악": ["폴킴 - 모든 날, 모든 순간"], "영화": ["어바웃 타임"]},
@@ -75,6 +80,7 @@ def recommend(final_emotion):
     return recommendations.get(final_emotion, {"책": [], "음악": [], "영화": []})
 
 def save_feedback_to_gsheets(client, feedback_df):
+    # ... (이전과 동일)
     try:
         spreadsheet = client.open("diary_app_feedback")
         worksheet = spreadsheet.worksheet("Sheet1")
@@ -89,14 +95,20 @@ def save_feedback_to_gsheets(client, feedback_df):
         st.error(f"피드백 저장 중 오류 발생: {e}")
 
 def generate_simple_diary():
-    """예비용 간단한 랜덤 일기 생성 함수"""
+    # ... (이전과 동일)
     morning = ["아침에 상쾌하게 일어났다.", "출근길 지하철에 사람이 너무 많아 힘들었다."]
     afternoon = ["점심으로 맛있는 파스타를 먹어서 기분이 좋았다.", "갑작스러운 소식을 듣고 너무 놀랐다."]
     evening = ["퇴근하고 운동을 하니 개운했다.", "자기 전에 본 영화가 정말 감동적이고 사랑스러웠다."]
     return f"{random.choice(morning)} {random.choice(afternoon)} {random.choice(evening)}"
 
+# ⭐️⭐️⭐️ 1. 'AI 일기 생성' 함수 수정 ⭐️⭐️⭐️
 def generate_diary_with_llm():
-    """생성 AI를 이용한 새로운 일기 생성 함수"""
+    """생성 AI를 이용한 새로운 일기 생성 함수 (디버깅 기능 추가)"""
+    # st.secrets에 키가 있는지 먼저 확인
+    if "OPENAI_API_KEY" not in st.secrets:
+        st.error("OpenAI API 키가 Secrets에 설정되지 않았습니다! '디버깅 정보 보기'를 확인해주세요.")
+        return None # 오류가 있으면 함수를 중단
+
     try:
         openai.api_key = st.secrets["OPENAI_API_KEY"]
         emotion_list = ["행복", "사랑", "슬픔", "분노", "힘듦", "놀람"]
@@ -109,35 +121,25 @@ def generate_diary_with_llm():
             f"답변은 다른 부가 설명 없이 오직 일기 내용만 포함해야 합니다."
         )
         
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that writes diary entries."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.8,
-            max_tokens=200
-        )
-        
+        response = openai.chat.completions.create(model="gpt-3.5-turbo", messages=[{"role": "user", "content": prompt}])
         diary_content = response.choices[0].message.content
         return diary_content.strip()
     except Exception as e:
-        st.error(f"AI 일기 생성 중 오류 발생: {e}")
-        st.warning("예비용 랜덤 일기 생성기를 사용합니다.")
-        return generate_simple_diary()
+        st.error(f"AI 일기 생성 중 API 오류 발생: {e}")
+        return None
 
-# --- 3. UI 로직 (콜백 함수 정의) ---
 def handle_random_click():
     with st.spinner("AI가 새로운 일기를 창작하고 있습니다..."):
-        st.session_state.diary_text = generate_diary_with_llm()
+        new_diary = generate_diary_with_llm()
+        if new_diary: # 생성에 성공했을 때만 내용을 업데이트
+            st.session_state.diary_text = new_diary
     st.session_state.analysis_results = None
 
 def handle_analyze_click(model, vectorizer):
+    # ... (이전과 동일)
     diary_content = st.session_state.diary_text
-    if not diary_content.strip():
-        st.warning("일기를 입력해주세요!")
-    elif model is None or vectorizer is None:
-        st.error("모델이 로드되지 않았습니다. GitHub에서 모델 파일을 확인해주세요.")
+    if not diary_content.strip(): st.warning("일기를 입력해주세요!")
+    elif model is None or vectorizer is None: st.error("모델이 로드되지 않았습니다.")
     else:
         with st.spinner('AI가 일기를 분석하고 있습니다...'):
             _, results = analyze_diary_ml(model, vectorizer, diary_content)
@@ -145,28 +147,25 @@ def handle_analyze_click(model, vectorizer):
 
 # --- 4. Streamlit UI 구성 ---
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v6.4)")
+st.title("📊 하루 감정 분석 리포트 (v6.5)")
+# ... (이하 UI 코드 대부분 동일)
 
 model, vectorizer = load_ml_resources()
-
-if 'diary_text' not in st.session_state: st.session_state.diary_text = "오늘 아침 깜짝 선물을 받고 너무 놀랐고 행복했다. 점심에는 친구와 사소한 다툼으로 슬펐지만, 저녁에 연인과 맛있는 것을 먹으며 사랑을 느꼈다."
+if 'diary_text' not in st.session_state: st.session_state.diary_text = ""
 if 'analysis_results' not in st.session_state: st.session_state.analysis_results = None
-
 col1, col2 = st.columns([3, 1])
 with col1:
     st.text_area("오늘의 일기를 시간의 흐름에 따라 작성해보세요:", key='diary_text', height=250)
 with col2:
     st.write(" "); st.write(" ")
-    st.button("🔄 AI로 일기 생성", on_click=handle_random_click, help="OpenAI API를 이용해 새로운 일기를 자동으로 생성합니다.")
+    st.button("🔄 AI로 일기 생성", on_click=handle_random_click)
     st.button("🔍 내 하루 감정 분석하기", type="primary", on_click=handle_analyze_click, args=(model, vectorizer))
-
 if st.session_state.analysis_results:
-    if model is None or vectorizer is None:
-        st.error("모델 파일을 불러오는 데 실패했습니다. GitHub 저장소에 pkl 파일이 있는지 확인해주세요.")
-    else:
+    if model and vectorizer:
         scores_data, _ = analyze_diary_ml(model, vectorizer, st.session_state.diary_text)
         df_scores = pd.DataFrame(scores_data).T
         if df_scores.sum().sum() > 0:
+            # ... (시각화 및 추천 UI는 이전과 동일)
             st.subheader("🕒 시간대별 감정 분석 결과")
             final_emotion = df_scores.sum().idxmax()
             res_col1, res_col2 = st.columns([1.2, 1])
@@ -185,14 +184,11 @@ if st.session_state.analysis_results:
             recs = recommend(final_emotion)
             rec_col1, rec_col2, rec_col3 = st.columns(3)
             with rec_col1:
-                st.write("📚 **이런 책은 어때요?**")
-                for item in recs['책']: st.write(f"- {item}")
+                st.write("📚 **이런 책은 어때요?**"); [st.write(f"- {item}") for item in recs['책']]
             with rec_col2:
-                st.write("🎵 **이런 음악도 들어보세요?**")
-                for item in recs['음악']: st.write(f"- {item}")
+                st.write("🎵 **이런 음악도 들어보세요?**"); [st.write(f"- {item}") for item in recs['음악']]
             with rec_col3:
-                st.write("🎬 **이런 영화/드라마도 추천해요!**")
-                for item in recs['영화']: st.write(f"- {item}")
+                st.write("🎬 **이런 영화/드라마도 추천해요!**"); [st.write(f"- {item}") for item in recs['영화']]
             st.divider()
             st.subheader("🔍 분석 결과 피드백")
             feedback_data = []
@@ -202,10 +198,8 @@ if st.session_state.analysis_results:
                 with cols[0]:
                     correct_time = st.radio("이 문장의 시간대는?", TIMES, index=TIMES.index(result['predicted_time']), key=f"time_{i}", horizontal=True)
                 with cols[1]:
-                    try:
-                        emotion_index = EMOTIONS.index(result['predicted_emotion'])
-                    except ValueError:
-                        emotion_index = 0
+                    try: emotion_index = EMOTIONS.index(result['predicted_emotion'])
+                    except ValueError: emotion_index = 0
                     correct_emotion = st.selectbox("이 문장의 진짜 감정은?", EMOTIONS, index=emotion_index, key=f"emotion_{i}")
                 feedback_data.append({'text': result['sentence'], 'label': correct_emotion, 'time': correct_time})
                 st.write("---")
@@ -223,24 +217,23 @@ if st.session_state.analysis_results:
                         st.session_state.analysis_results = None; st.rerun()
                     else: st.info("수정된 내용이 없네요. AI가 잘 맞췄나 보네요! 😄")
                 else:
-                    st.error("Google Sheets에 연결할 수 없습니다. Secrets 설정을 확인해주세요.")
+                    st.error("Google Sheets에 연결할 수 없습니다.")
 
-with st.expander("피드백 저장 현황 보기 (Google Sheets)"):
-    client = get_gsheets_connection()
-    if client:
-        try:
-            spreadsheet = client.open("diary_app_feedback")
-            worksheet = spreadsheet.worksheet("Sheet1")
-            df = pd.DataFrame(worksheet.get_all_records())
-            st.dataframe(df)
-            st.info(f"현재 총 **{len(df)}개**의 데이터가 저장되어 있습니다.")
-        except gspread.exceptions.SpreadsheetNotFound:
-            st.error("Google Sheets에서 'diary_app_feedback' 파일을 찾을 수 없습니다. 파일 이름을 확인해주세요.")
-        except gspread.exceptions.WorksheetNotFound:
-            st.error("스프레드시트에서 'Sheet1' 워크시트를 찾을 수 없습니다. 시트 이름을 확인해주세요.")
-        except Exception as e:
-            st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
+# ⭐️⭐️⭐️ 2. '디버깅 정보 보기' 섹션 추가 ⭐️⭐️⭐️
+with st.expander("⚙️ 디버깅 정보 보기"):
+    st.write("현재 Streamlit Secrets에 등록된 키 목록:")
+    # st.secrets.keys()를 사용해 모든 최상위 키를 보여줍니다.
+    st.write(st.secrets.keys())
+    
+    st.write("`connections.gsheets` 상세 정보:")
+    if "connections" in st.secrets and "gsheets" in st.secrets.connections:
+        st.json(st.secrets.connections.gsheets)
     else:
-        st.error("Google Sheets에 연결할 수 없습니다. 아래 사항을 확인해주세요:")
-        st.error("1. Streamlit Secrets에 인증 정보가 정확한가요?")
-        st.error("2. Google Sheets 파일이 서비스 계정에 '편집자'로 공유되었나요?")
+        st.warning("`connections.gsheets` 정보가 Secrets에 없습니다.")
+        
+    st.write("`OPENAI_API_KEY` 상세 정보:")
+    if "OPENAI_API_KEY" in st.secrets:
+        # 키의 일부만 보여줘서 유출 방지
+        st.write(f"키가 등록되어 있습니다: `{st.secrets.OPENAI_API_KEY[:5]}...`")
+    else:
+        st.warning("`OPENAI_API_KEY`가 Secrets에 없습니다.")
