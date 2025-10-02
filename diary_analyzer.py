@@ -1,4 +1,4 @@
-# diary_analyzer.py (v6.1 - 최종 안정화 버전)
+# diary_analyzer.py (v6.2 - 버튼 콜백 최종 수정)
 
 import streamlit as st
 import gspread
@@ -35,6 +35,14 @@ def load_ml_resources():
         return model, vectorizer
     except FileNotFoundError: return None, None
 
+@st.cache_resource
+def get_gsheets_connection():
+    creds_dict = st.secrets["connections"]["gsheets"]
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    client = gspread.authorize(credentials)
+    return client
+
 def analyze_diary_ml(model, vectorizer, text):
     if not model or not vectorizer: return None, None
     sentences = re.split(r'[.?!]', text); sentences = [s.strip() for s in sentences if s.strip()]
@@ -54,14 +62,6 @@ def analyze_diary_ml(model, vectorizer, text):
 def recommend(final_emotion):
     recommendations = {"기쁨": {"책": ["오늘 밤, 세계에서 이 사랑이 사라진다 해도"], "음악": ["윤하 - 사건의 지평선"], "영화": ["탑건: 매버릭"]},"슬픔": {"책": ["달러구트 꿈 백화점"], "음악": ["김광석 - 서른 즈음에"], "영화": ["코코"]},"분노": {"책": ["역행자"], "음악": ["(여자)아이들 - TOMBOY"], "영화": ["범죄도시2"]},"우울": {"책": ["불편한 편의점"], "음악": ["아이유 - 밤편지"], "영화": ["리틀 포레스트"]},"사랑": {"책": ["나의 해방일지"], "음악": ["성시경 - 너의 모든 순간"], "영화": ["헤어질 결심"]},}
     return recommendations.get(final_emotion, {"책": [], "음악": [], "영화": []})
-
-@st.cache_resource
-def get_gsheets_connection():
-    creds_dict = st.secrets["connections"]["gsheets"]
-    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    client = gspread.authorize(credentials)
-    return client
 
 def save_feedback_to_gsheets(client, feedback_df):
     try:
@@ -83,11 +83,29 @@ def generate_random_diary():
     evening = ["퇴근하고 운동을 하니 개운했다.", "자기 전에 본 영화가 정말 감동적이었다."]
     return f"{random.choice(morning)} {random.choice(afternoon)} {random.choice(evening)}"
 
-# --- 3. Streamlit UI 구성 ---
-st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v6.1)")
+# --- ⭐️ 3. UI 로직 수정 (콜백 함수 정의) ---
 
-# 모델 로딩은 여기서 한 번만!
+# '랜덤 일기 생성' 버튼을 위한 콜백 함수
+def handle_random_click():
+    st.session_state.diary_text = generate_random_diary()
+    st.session_state.analysis_results = None # 이전 분석 결과 초기화
+
+# '분석하기' 버튼을 위한 콜백 함수
+def handle_analyze_click(model, vectorizer):
+    diary_content = st.session_state.diary_text
+    if not diary_content.strip():
+        st.warning("일기를 입력해주세요!")
+    elif model is None or vectorizer is None:
+        st.error("모델이 로드되지 않았습니다. 앱 관리자에게 문의하세요.")
+    else:
+        with st.spinner('AI가 일기를 분석하고 있습니다...'):
+            _, results = analyze_diary_ml(model, vectorizer, diary_content)
+            st.session_state.analysis_results = results
+
+# --- 4. Streamlit UI 구성 ---
+st.set_page_config(layout="wide")
+st.title("📊 하루 감정 분석 리포트 (v6.2)")
+
 model, vectorizer = load_ml_resources()
 
 if 'diary_text' not in st.session_state: st.session_state.diary_text = ""
@@ -98,25 +116,14 @@ with col1:
     st.text_area("오늘의 일기를 시간의 흐름에 따라 작성해보세요:", key='diary_text', height=250)
 with col2:
     st.write(" "); st.write(" ")
-    if st.button("🔄 랜덤 일기 생성"):
-        st.session_state.diary_text = generate_random_diary()
-        st.session_state.analysis_results = None
-        st.rerun()
-    if st.button("🔍 내 하루 감정 분석하기", type="primary"):
-        if not st.session_state.diary_text.strip():
-            st.warning("일기를 입력해주세요!")
-        elif model is None or vectorizer is None:
-            st.error("모델이 로드되지 않았습니다. 앱 관리자에게 문의하세요.")
-        else:
-            with st.spinner('AI가 일기를 분석하고 있습니다...'):
-                _, results = analyze_diary_ml(model, vectorizer, st.session_state.diary_text)
-                st.session_state.analysis_results = results
+    # ⭐️ if문 대신 on_click 콜백을 사용하도록 버튼 수정
+    st.button("🔄 랜덤 일기 생성", on_click=handle_random_click)
+    st.button("🔍 내 하루 감정 분석하기", type="primary", on_click=handle_analyze_click, args=(model, vectorizer))
 
 if st.session_state.analysis_results:
     scores_data, _ = analyze_diary_ml(model, vectorizer, st.session_state.diary_text)
     df_scores = pd.DataFrame(scores_data).T
     if df_scores.sum().sum() > 0:
-        # (이하 시각화 및 피드백 UI 코드는 이전과 동일)
         st.subheader("🕒 시간대별 감정 분석 결과")
         final_emotion = df_scores.sum().idxmax()
         res_col1, res_col2 = st.columns([1.2, 1])
@@ -137,7 +144,7 @@ if st.session_state.analysis_results:
         with rec_col1:
             st.write("📚 **이런 책은 어때요?**"); [st.write(f"- {item}") for item in recs['책']]
         with rec_col2:
-            st.write("🎵 **이런 음악도 들어보세요!**"); [st.write(f"- {item}") for item in recs['음악']]
+            st.write("🎵 **이런 음악도 들어보세요?**"); [st.write(f"- {item}") for item in recs['음악']]
         with rec_col3:
             st.write("🎬 **이런 영화/드라마도 추천해요!**"); [st.write(f"- {item}") for item in recs['영화']]
         st.divider()
@@ -165,7 +172,6 @@ if st.session_state.analysis_results:
                 st.session_state.analysis_results = None; st.rerun()
             else: st.info("수정된 내용이 없네요. AI가 잘 맞췄나 보네요! 😄")
 
-# --- 피드백 저장 현황 보기 ---
 with st.expander("피드백 저장 현황 보기 (Google Sheets)"):
     try:
         client = get_gsheets_connection()
