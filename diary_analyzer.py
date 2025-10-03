@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.3 - 인증 방식 수정 최종본)
+# diary_analyzer.py (v7.4 - Spotify 연동 최종본)
 
 import streamlit as st
 import gspread
@@ -10,9 +10,12 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 import joblib
 import random
+import spotipy # Spotify 라이브러리 import
+from spotipy.oauth2 import SpotifyClientCredentials
 
 # --- 1. 기본 설정 (이전과 동일) ---
 MODEL_PATH = Path("sentiment_model.pkl")
+# ... (이하 기본 설정은 이전 버전과 동일)
 VECTORIZER_PATH = Path("tfidf_vectorizer.pkl")
 
 try:
@@ -26,6 +29,7 @@ EMOTIONS = ["행복", "사랑", "슬픔", "분노", "힘듦", "놀람"]
 TIMES = ["아침", "점심", "저녁"]
 TIME_KEYWORDS = { "아침": ["아침", "오전", "출근", "일어나서"], "점심": ["점심", "낮", "점심시간"], "저녁": ["저녁", "오후", "퇴근", "밤", "새벽", "자기 전", "꿈"],}
 
+
 # --- 2. 핵심 기능 함수 ---
 @st.cache_resource
 def load_ml_resources():
@@ -37,10 +41,10 @@ def load_ml_resources():
 
 @st.cache_resource
 def get_gsheets_connection():
+    # ... (이전과 동일)
     try:
         if "connections" in st.secrets and "gsheets" in st.secrets.connections:
             creds_dict = st.secrets["connections"]["gsheets"]
-            # ⭐️ 이 부분이 최신 방식으로 수정되었습니다!
             scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
             credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
             client = gspread.authorize(credentials)
@@ -50,8 +54,20 @@ def get_gsheets_connection():
     except Exception:
         return None
 
-# (이하 analyze_diary_ml, recommend, save_feedback_to_gsheets, generate_random_diary 함수는 이전과 동일)
+@st.cache_data(ttl=60)
+def fetch_all_data_from_gsheets(_client):
+    # ... (이전과 동일)
+    try:
+        spreadsheet = _client.open("diary_app_feedback")
+        worksheet = spreadsheet.worksheet("Sheet1")
+        df = pd.DataFrame(worksheet.get_all_records())
+        return df
+    except Exception as e:
+        st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
+        return pd.DataFrame()
+
 def analyze_diary_ml(model, vectorizer, text):
+    # ... (이전과 동일)
     if not model or not vectorizer: return None, None
     sentences = re.split(r'[.?!]', text); sentences = [s.strip() for s in sentences if s.strip()]
     time_scores = { t: {e: 0 for e in EMOTIONS} for t in TIMES }
@@ -66,9 +82,66 @@ def analyze_diary_ml(model, vectorizer, text):
              time_scores[current_time][prediction] += 1
         analysis_results.append({'sentence': sentence, 'predicted_emotion': prediction, 'predicted_time': current_time})
     return time_scores, analysis_results
+
+# ⭐️ Spotify 추천을 위한 새로운 함수
+@st.cache_data(ttl=3600) # 1시간 동안 캐싱
+def get_spotify_recommendations(emotion):
+    try:
+        # 1. Secrets에서 인증 정보 불러오기
+        client_id = st.secrets["SPOTIPY_CLIENT_ID"]
+        client_secret = st.secrets["SPOTIPY_CLIENT_SECRET"]
+
+        # 2. Spotify 인증
+        client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
+        sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+
+        # 3. ⭐️ 감정별 플레이리스트 ID 맵핑 (3단계에서 복사한 ID를 여기에 붙여넣으세요!)
+        playlist_ids = {
+            "행복": "37i9dQZF1DXdPec7aAS84p", # 예시: Spotify 'Happy Hits!' 플레이리스트
+            "사랑": "37i9dQZF1DX50QitC6OqUh", # 예시: Spotify 'Love Pop' 플레이리스트
+            "슬픔": "37i9dQZF1DX7qK8ma5wgG1", # 예시: Spotify 'Sad Indie' 플레이리스트
+            "분노": "37i9dQZF1DWWJQu3jYa29t", # 예시: Spotify 'Rage Beats' 플레이리스트
+            "힘듦": "37i9dQZF1DX3YSRonYSFXA", # 예시: Spotify 'Acoustic Hits' 플레이리스트
+            "놀람": "37i9dQZF1DWVlLVgnFfS4A", # 예시: Spotify 'Confidence Boost' 플레이리스트
+        }
+        
+        playlist_id = playlist_ids.get(emotion)
+        if not playlist_id:
+            return ["추천할 플레이리스트가 없어요."]
+
+        # 4. 플레이리스트에서 노래 목록 가져오기
+        results = sp.playlist_items(playlist_id, limit=50)
+        tracks = [item['track'] for item in results['items'] if item['track']]
+
+        # 5. 랜덤으로 3곡 선택해서 "노래 제목 - 아티스트" 형태로 반환
+        if not tracks:
+            return ["플레이리스트에 노래가 없어요."]
+        
+        random_tracks = random.sample(tracks, min(3, len(tracks)))
+        recommend_list = [f"{track['name']} - {track['artists'][0]['name']}" for track in random_tracks]
+        
+        return recommend_list
+        
+    except Exception as e:
+        return [f"Spotify 추천 오류: {e}"]
+
 def recommend(final_emotion):
-    recommendations = {"행복": {"책": ["기분을 관리하면 인생이 관리된다"], "음악": ["악뮤 - DINOSAUR"], "영화": ["월터의 상상은 현실이 된다"]}, "사랑": {"책": ["사랑의 기술"], "음악": ["폴킴 - 모든 날, 모든 순간"], "영화": ["어바웃 타임"]}, "슬픔": {"책": ["아몬드"], "음악": ["이선희 - 인연"], "영화": ["코코"]}, "분노": {"책": ["분노의 심리학"], "음악": ["G-DRAGON - 삐딱하게"], "영화": ["성난 사람들 (드라마)"]}, "힘듦": {"책": ["죽고 싶지만 떡볶이는 먹고 싶어"], "음악": ["옥상달빛 - 수고했어, 오늘도"], "영화": ["리틀 포레스트"]}, "놀람": {"책": ["데미안"], "음악": ["Queen - Bohemian Rhapsody"], "영화": ["유전"]},}
-    return recommendations.get(final_emotion, {"책": [], "음악": [], "영화": []})
+    # ⭐️ 음악 추천 부분을 Spotify 함수 호출로 변경
+    music_recs = get_spotify_recommendations(final_emotion)
+    
+    recommendations = {
+        "행복": {"책": ["기분을 관리하면 인생이 관리된다"], "영화": ["월터의 상상은 현실이 된다"]},
+        "사랑": {"책": ["사랑의 기술"], "영화": ["어바웃 타임"]},
+        "슬픔": {"책": ["아몬드"], "영화": ["코코"]},
+        "분노": {"책": ["분노의 심리학"], "영화": ["성난 사람들 (드라마)"]},
+        "힘듦": {"책": ["죽고 싶지만 떡볶이는 먹고 싶어"], "영화": ["리틀 포레스트"]},
+        "놀람": {"책": ["데미안"], "영화": ["유전"]},
+    }
+    recs = recommendations.get(final_emotion, {"책": [], "영화": []})
+    recs['음악'] = music_recs # Spotify 추천 결과를 딕셔너리에 추가
+    return recs
+
+# (이하 save_feedback_to_gsheets, generate_random_diary, 콜백 함수, UI 구성 등은 모두 이전 버전과 동일)
 def save_feedback_to_gsheets(client, feedback_df):
     try:
         spreadsheet = client.open("diary_app_feedback")
@@ -90,8 +163,6 @@ def generate_random_diary():
     diary_parts.extend(selected_midday_events)
     diary_parts.append(random.choice(evening_conclusions))
     return " ".join(diary_parts)
-
-# (이하 UI 로직 및 구성은 이전과 동일)
 def handle_random_click():
     st.session_state.diary_text = generate_random_diary()
     st.session_state.analysis_results = None
@@ -106,7 +177,7 @@ def handle_analyze_click(model, vectorizer):
             _, results = analyze_diary_ml(model, vectorizer, diary_content)
             st.session_state.analysis_results = results
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.3)")
+st.title("📊 하루 감정 분석 리포트 (v7.4)")
 model, vectorizer = load_ml_resources()
 if 'diary_text' not in st.session_state: st.session_state.diary_text = ""
 if 'analysis_results' not in st.session_state: st.session_state.analysis_results = None
@@ -140,13 +211,17 @@ if st.session_state.analysis_results:
             recs = recommend(final_emotion)
             rec_col1, rec_col2, rec_col3 = st.columns(3)
             with rec_col1:
-                st.write("📚 **이런 책은 어때요?**"); [st.write(f"- {item}") for item in recs['책']]
+                st.write("📚 **이런 책은 어때요?**")
+                for item in recs['책']: st.write(f"- {item}")
             with rec_col2:
-                st.write("🎵 **이런 음악도 들어보세요?**"); [st.write(f"- {item}") for item in recs['음악']]
+                st.write("🎵 **이런 음악도 들어보세요?**")
+                for item in recs['음악']: st.write(f"- {item}")
             with rec_col3:
-                st.write("🎬 **이런 영화/드라마도 추천해요?**"); [st.write(f"- {item}") for item in recs['영화']]
+                st.write("🎬 **이런 영화/드라마도 추천해요?**")
+                for item in recs['영화']: st.write(f"- {item}")
             st.divider()
             st.subheader("🔍 분석 결과 피드백")
+            # ... (피드백 UI는 이전과 동일)
             feedback_data = []
             for i, result in enumerate(st.session_state.analysis_results):
                 st.markdown(f"> {result['sentence']}")
@@ -173,19 +248,9 @@ if st.session_state.analysis_results:
                         st.session_state.analysis_results = None; st.rerun()
                     else: st.info("수정된 내용이 없네요. AI가 잘 맞췄나 보네요! 😄")
                 else: st.error("Google Sheets에 연결할 수 없습니다.")
-@st.cache_data(ttl=60)
-def fetch_all_data_from_gsheets(_client):
-    try:
-        spreadsheet = _client.open("diary_app_feedback")
-        worksheet = spreadsheet.worksheet("Sheet1")
-        df = pd.DataFrame(worksheet.get_all_records())
-        return df
-    except Exception as e:
-        # 에러가 발생하면 비어있는 데이터프레임을 반환하여 앱 중단 방지
-        st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
-        return pd.DataFrame()
 st.divider()
 with st.expander("피드백 저장 현황 보기 (Google Sheets)"):
+    # ... (이전과 동일)
     client = get_gsheets_connection()
     if client:
         df = fetch_all_data_from_gsheets(client)
@@ -193,6 +258,6 @@ with st.expander("피드백 저장 현황 보기 (Google Sheets)"):
             st.dataframe(df.tail())
             st.info(f"현재 총 **{len(df)}개**의 데이터가 저장되어 있습니다. (1분마다 갱신)")
         else:
-            st.write("아직 저장된 데이터가 없거나 데이터를 불러오는 데 실패했습니다.")
+            st.write("아직 저장된 데이터가 없습니다.")
     else:
         st.error("Google Sheets에 연결할 수 없습니다. Secrets 설정을 다시 확인해주세요.")
