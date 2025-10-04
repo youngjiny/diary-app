@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.8 - 개인 플레이리스트 ID 적용)
+# diary_analyzer.py (v7.9 - 최종 완성본)
 
 import streamlit as st
 import gspread
@@ -166,21 +166,17 @@ def handle_analyze_click(model, vectorizer):
 
 # --- 3. Streamlit UI 구성 ---
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.8)")
+st.title("📊 하루 감정 분석 리포트 (v7.9)")
 
 with st.expander("⚙️ 시스템 상태 확인"):
-    # Check for GSheets
     if st.secrets.get("connections", {}).get("gsheets"):
         st.success("✅ Google Sheets 인증 정보가 확인되었습니다.")
     else:
         st.error("❗️ Google Sheets 인증 정보('connections.gsheets')를 찾을 수 없습니다.")
-    
-    # Check for Spotify
     if st.secrets.get("spotify", {}).get("client_id") and st.secrets.get("spotify", {}).get("client_secret"):
         st.success("✅ Spotify 인증 정보가 확인되었습니다.")
     else:
         st.error("❗️ Spotify 인증 정보('[spotify]' 섹션)를 찾을 수 없거나 키 이름이 틀렸습니다.")
-    
     model, vectorizer = load_ml_resources()
     if model and vectorizer:
         st.success("✅ AI 모델 파일이 성공적으로 로드되었습니다.")
