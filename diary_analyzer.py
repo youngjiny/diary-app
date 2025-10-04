@@ -88,7 +88,7 @@ def get_spotify_playlist_recommendations(emotion):
         sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
         playlist_ids = {
             "행복": "1kaEr7seXIYcPflw2M60eA", "사랑": "2KKLfSejuxil1vZvzdVgB4",
-            "슬픔": "3tAeVAtMWHzaGOXMGoRhTb", "분노": "22O1tf3J7fSjIo2FdxtJU1",
+            "슬픔": "3tAeVAtMWHzaGOXMGoRhTb", "분노": "22O1tfJ7fSjIo2FdxtJU1",
             "힘듦": "68HSylU5xKtDVYiago9RDw", "놀람": "3sHzse5FGtcafd8dY0mO8h",
         }
         playlist_id = playlist_ids.get(emotion)
