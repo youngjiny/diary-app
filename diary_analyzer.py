@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.15 - 오류 정밀 진단)
+# diary_analyzer.py (v7.16 - Spotify API 최종 수정)
 
 import streamlit as st
 import gspread
@@ -101,7 +101,7 @@ def get_spotify_playlist_recommendations(emotion):
     except Exception as e:
         return [f"Spotify 추천 오류: {e}"]
 
-# ⭐️⭐️⭐️ AI 추천 함수 최종 수정 (오류 진단 강화) ⭐️⭐️⭐️
+# ⭐️⭐️⭐️ AI 추천 함수 최종 수정 (부가 옵션 제거) ⭐️⭐️⭐️
 @st.cache_data(ttl=3600)
 def get_spotify_ai_recommendations(emotion):
     spotify_creds = st.secrets.get("spotify", {})
@@ -114,45 +114,37 @@ def get_spotify_ai_recommendations(emotion):
         client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
         sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
-        params = {
-            "행복": {"seed_genres": ["k-pop", "dance-pop", "pop"], "target_valence": 0.8, "target_energy": 0.7},
-            "사랑": {"seed_genres": ["k-pop", "acoustic", "r-n-b"], "target_valence": 0.7, "target_energy": 0.5},
-            "슬픔": {"seed_genres": ["ballad", "piano", "k-indie"], "target_valence": 0.2, "target_energy": 0.3},
-            "분노": {"seed_genres": ["rock", "metal", "hard-rock"], "target_valence": 0.3, "target_energy": 0.9},
-            "힘듦": {"seed_genres": ["ambient", "classical", "acoustic"], "target_valence": 0.4, "target_energy": 0.2},
-            "놀람": {"seed_genres": ["electronic", "synth-pop", "funk"], "target_valence": 0.6, "target_energy": 0.8},
+        # 감정별 대표 장르 (가장 확실한 것들만 남김)
+        genre_map = {
+            "행복": ["k-pop", "pop", "dance"],
+            "사랑": ["k-pop", "r-n-b", "acoustic"],
+            "슬픔": ["ballad", "k-indie", "piano"],
+            "분노": ["rock", "metal", "hard-rock"],
+            "힘듦": ["ambient", "classical", "acoustic"],
+            "놀람": ["funk", "synth-pop", "electronic"],
         }
 
-        selected_params = params.get(emotion)
-        if not selected_params:
+        seed_genres = genre_map.get(emotion)
+        if not seed_genres:
             return ["AI가 추천할 장르를 찾지 못했어요."]
 
-        all_tracks = []
-        for genre in selected_params["seed_genres"]:
-            try:
-                results = sp.recommendations(
-                    seed_genres=[genre],
-                    target_valence=selected_params["target_valence"],
-                    target_energy=selected_params["target_energy"],
-                    limit=5,
-                    country="KR"
-                )
-                all_tracks.extend(results['tracks'])
-            except Exception as e:
-                # ⭐️ 오류 발생 시, 상세 내용을 화면에 경고로 출력하고 다음으로 넘어감
-                st.warning(f"'{genre}' 장르 추천 시도 중 오류 발생. 건너뜁니다. (오류 타입: {type(e)}, 메시지: {e})")
-                continue
+        # ⭐️ 부가 옵션(target_valence 등)을 모두 제거하고 가장 단순한 형태로 요청
+        results = sp.recommendations(
+            seed_genres=seed_genres,
+            limit=20,
+            country="KR"
+        )
         
-        if not all_tracks:
+        tracks = results['tracks']
+        if not tracks:
             return ["AI가 추천할 노래를 찾지 못했어요."]
 
-        unique_tracks = {track['id']: track for track in all_tracks}.values()
-        
-        random_tracks = random.sample(list(unique_tracks), min(3, len(unique_tracks)))
+        random_tracks = random.sample(tracks, min(3, len(tracks)))
         return [f"{track['name']} - {track['artists'][0]['name']}" for track in random_tracks]
 
     except Exception as e:
         return [f"Spotify AI 추천 오류: {e}"]
+
 
 def recommend(final_emotion, method):
     if method == 'AI 자동 추천':
@@ -211,7 +203,7 @@ def handle_analyze_click(model, vectorizer):
 
 # --- 3. Streamlit UI 구성 ---
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.15)")
+st.title("📊 하루 감정 분석 리포트 (v7.16)")
 
 with st.expander("⚙️ 시스템 상태 확인"):
     if st.secrets.get("connections", {}).get("gsheets"): st.success("✅ Google Sheets 인증 정보가 확인되었습니다.")
