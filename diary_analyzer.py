@@ -92,12 +92,12 @@ def get_spotify_recommendations(emotion):
         
         # ⭐️ 보내주신 개인 플레이리스트 ID로 모두 교체했습니다.
         playlist_ids = {
-            "행복": "37i9dQZF1DXdPec7aAS84p",
-            "사랑": "37i9dQZF1DX50QitC6OqUh",
-            "슬픔": "37i9dQZF1DX7qK8ma5wgG1",
-            "분노": "37i9dQZF1DWWJQu3jYa29t",
-            "힘듦": "37i9dQZF1DX3YSRonYSFXA",
-            "놀람": "37i9dQZF1DWVlLVgnFfS4A",
+            "행복": "1kaEr7seXIYcPflw2M60eA",
+            "사랑": "2KKLfSejuxil1vZvzdVgB4",
+            "슬픔": "3tAeVAtMWHzaGOXMGoRhTb",
+            "분노": "22O1tf3J7fSjIo2FdxtJU1",
+            "힘듦": "68HSylU5xKtDVYiago9RDw",
+            "놀람": "3sHzse5FGtcafd8dY0mO8h",
         }
         
         playlist_id = playlist_ids.get(emotion)
