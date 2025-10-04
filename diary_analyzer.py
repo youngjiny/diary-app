@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.7 - Secrets 구조 변경 최종본)
+# diary_analyzer.py (v7.8 - 개인 플레이리스트 ID 적용)
 
 import streamlit as st
 import gspread
@@ -79,22 +79,27 @@ def analyze_diary_ml(model, vectorizer, text):
 
 @st.cache_data(ttl=3600)
 def get_spotify_recommendations(emotion):
-    # ⭐️ Secrets 구조에 맞게 접근 방식 수정
     spotify_creds = st.secrets.get("spotify", {})
     client_id = spotify_creds.get("client_id")
     client_secret = spotify_creds.get("client_secret")
 
     if not client_id or not client_secret:
-        return ["Spotify 인증 정보가 Secrets에 없거나 잘못되었습니다."]
+        return ["Spotify 인증 정보가 Secrets에 없습니다."]
 
     try:
         client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
         sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+        
+        # ⭐️ 보내주신 개인 플레이리스트 ID로 모두 교체했습니다.
         playlist_ids = {
-            "행복": "37i9dQZF1DXdPec7aAS84p", "사랑": "37i9dQZF1DX50QitC6OqUh",
-            "슬픔": "37i9dQZF1DX7qK8ma5wgG1", "분노": "37i9dQZF1DWWJQu3jYa29t",
-            "힘듦": "37i9dQZF1DX3YSRonYSFXA", "놀람": "37i9dQZF1DWVlLVgnFfS4A",
+            "행복": "37i9dQZF1DXdPec7aAS84p",
+            "사랑": "37i9dQZF1DX50QitC6OqUh",
+            "슬픔": "37i9dQZF1DX7qK8ma5wgG1",
+            "분노": "37i9dQZF1DWWJQu3jYa29t",
+            "힘듦": "37i9dQZF1DX3YSRonYSFXA",
+            "놀람": "37i9dQZF1DWVlLVgnFfS4A",
         }
+        
         playlist_id = playlist_ids.get(emotion)
         if not playlist_id: return ["추천할 플레이리스트가 없어요."]
         
@@ -161,17 +166,16 @@ def handle_analyze_click(model, vectorizer):
 
 # --- 3. Streamlit UI 구성 ---
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.7)")
+st.title("📊 하루 감정 분석 리포트 (v7.8)")
 
-# ⭐️ --- 시스템 상태 확인 부분 수정 --- ⭐️
-with st.expander("⚙️ 시스템 상태 확인", expanded=True):
+with st.expander("⚙️ 시스템 상태 확인"):
     # Check for GSheets
     if st.secrets.get("connections", {}).get("gsheets"):
         st.success("✅ Google Sheets 인증 정보가 확인되었습니다.")
     else:
         st.error("❗️ Google Sheets 인증 정보('connections.gsheets')를 찾을 수 없습니다.")
     
-    # ⭐️ Check for Spotify (새로운 구조에 맞게 수정)
+    # Check for Spotify
     if st.secrets.get("spotify", {}).get("client_id") and st.secrets.get("spotify", {}).get("client_secret"):
         st.success("✅ Spotify 인증 정보가 확인되었습니다.")
     else:
@@ -183,7 +187,6 @@ with st.expander("⚙️ 시스템 상태 확인", expanded=True):
     else:
         st.error("❗️ AI 모델 파일('sentiment_model.pkl')을 찾을 수 없습니다.")
 st.divider()
-
 
 if 'diary_text' not in st.session_state: st.session_state.diary_text = ""
 if 'analysis_results' not in st.session_state: st.session_state.analysis_results = None
