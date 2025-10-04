@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.12 - 추천 방식 선택 기능 추가)
+# diary_analyzer.py (v7.13 - AI 추천 장르 수정)
 
 import streamlit as st
 import gspread
@@ -110,17 +110,26 @@ def get_spotify_ai_recommendations(emotion):
     try:
         client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
         sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+
+        # ⭐️ Spotify가 알아들을 수 있는 공식 장르 이름으로 수정
         params = {
-            "행복": {"seed_genres": ["k-pop", "dance", "happy"], "target_valence": 0.8, "target_energy": 0.7},
+            "행복": {"seed_genres": ["k-pop", "dance", "pop"], "target_valence": 0.8, "target_energy": 0.7},
             "사랑": {"seed_genres": ["k-pop", "acoustic", "r-n-b"], "target_valence": 0.7, "target_energy": 0.5},
-            "슬픔": {"seed_genres": ["sad", "piano", "k-indie"], "target_valence": 0.2, "target_energy": 0.3},
+            "슬픔": {"seed_genres": ["ballad", "piano", "k-indie"], "target_valence": 0.2, "target_energy": 0.3},
             "분노": {"seed_genres": ["rock", "k-rock", "metal"], "target_valence": 0.3, "target_energy": 0.9},
             "힘듦": {"seed_genres": ["ambient", "classical", "acoustic"], "target_valence": 0.4, "target_energy": 0.2},
-            "놀람": {"seed_genres": ["pop", "electronic", "synth-pop"], "target_valence": 0.6, "target_energy": 0.8},
+            "놀람": {"seed_genres": ["electronic", "synth-pop", "funk"], "target_valence": 0.6, "target_energy": 0.8},
         }
+
         selected_params = params.get(emotion)
         if not selected_params: return ["AI가 추천할 장르를 찾지 못했어요."]
-        results = sp.recommendations(seed_genres=selected_params["seed_genres"], target_valence=selected_params["target_valence"], target_energy=selected_params["target_energy"], limit=10, country="KR")
+        results = sp.recommendations(
+            seed_genres=selected_params["seed_genres"],
+            target_valence=selected_params["target_valence"],
+            target_energy=selected_params["target_energy"],
+            limit=10,
+            country="KR"
+        )
         tracks = results['tracks']
         if not tracks: return ["AI가 추천할 노래를 찾지 못했어요."]
         random_tracks = random.sample(tracks, min(3, len(tracks)))
@@ -133,7 +142,6 @@ def recommend(final_emotion, method):
         music_recs = get_spotify_ai_recommendations(final_emotion)
     else:
         music_recs = get_spotify_playlist_recommendations(final_emotion)
-
     recommendations = {
         "행복": {"책": ["기분을 관리하면 인생이 관리된다"], "영화": ["월터의 상상은 현실이 된다"]},
         "사랑": {"책": ["사랑의 기술"], "영화": ["어바웃 타임"]},
@@ -186,7 +194,7 @@ def handle_analyze_click(model, vectorizer):
 
 # --- 3. Streamlit UI 구성 ---
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.12)")
+st.title("📊 하루 감정 분석 리포트 (v7.13)")
 
 with st.expander("⚙️ 시스템 상태 확인"):
     if st.secrets.get("connections", {}).get("gsheets"): st.success("✅ Google Sheets 인증 정보가 확인되었습니다.")
@@ -207,12 +215,7 @@ with col1:
     st.text_area("오늘의 일기를 시간의 흐름에 따라 작성해보세요:", key='diary_text', height=250)
 with col2:
     st.write(" "); st.write(" ")
-    st.radio(
-        "음악 추천 방식 선택",
-        ('내 플레이리스트', 'AI 자동 추천'),
-        key='rec_method',
-        horizontal=True
-    )
+    st.radio("음악 추천 방식 선택", ('내 플레이리스트', 'AI 자동 추천'), key='rec_method', horizontal=True)
     st.button("🔄 랜덤 일기 생성", on_click=handle_random_click)
     st.button("🔍 내 하루 감정 분석하기", type="primary", on_click=handle_analyze_click, args=(model, vectorizer))
 
@@ -234,11 +237,9 @@ if st.session_state.analysis_results:
             with res_col2:
                 st.dataframe(df_scores.style.format("{:.0f}").background_gradient(cmap='viridis'))
                 st.success(f"오늘 하루를 종합해 보면, **'{final_emotion}'**의 감정이 가장 컸네요!")
-            
             st.divider()
             st.subheader(f"'{final_emotion}' 감정을 위한 오늘의 추천")
             recs = recommend(final_emotion, st.session_state.rec_method)
-            
             rec_col1, rec_col2, rec_col3 = st.columns(3)
             with rec_col1:
                 st.write("📚 **이런 책은 어때요?**")
@@ -249,7 +250,6 @@ if st.session_state.analysis_results:
             with rec_col3:
                 st.write("🎬 **이런 영화/드라마도 추천해요?**")
                 for item in recs['영화']: st.write(f"- {item}")
-
             st.divider()
             st.subheader("🔍 분석 결과 피드백")
             feedback_data = []
@@ -278,7 +278,6 @@ if st.session_state.analysis_results:
                         st.session_state.analysis_results = None; st.rerun()
                     else: st.info("수정된 내용이 없네요. AI가 잘 맞췄나 보네요! 😄")
                 else: st.error("Google Sheets에 연결할 수 없습니다.")
-
 st.divider()
 with st.expander("피드백 저장 현황 보기 (Google Sheets)"):
     client = get_gsheets_connection()
