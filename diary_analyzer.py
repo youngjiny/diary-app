@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.9 - 최종 완성본)
+# diary_analyzer.py (v7.11 - 개인 플레이리스트 최종 적용)
 
 import streamlit as st
 import gspread
@@ -78,7 +78,7 @@ def analyze_diary_ml(model, vectorizer, text):
     return time_scores, analysis_results
 
 @st.cache_data(ttl=3600)
-def get_spotify_recommendations(emotion):
+def get_spotify_playlist_recommendations(emotion):
     spotify_creds = st.secrets.get("spotify", {})
     client_id = spotify_creds.get("client_id")
     client_secret = spotify_creds.get("client_secret")
@@ -90,7 +90,7 @@ def get_spotify_recommendations(emotion):
         client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
         sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
         
-        # ⭐️ 보내주신 개인 플레이리스트 ID로 모두 교체했습니다.
+        # ⭐️ 사용자님의 개인 플레이리스트 ID로 모두 교체했습니다.
         playlist_ids = {
             "행복": "1kaEr7seXIYcPflw2M60eA",
             "사랑": "2KKLfSejuxil1vZvzdVgB4",
@@ -112,8 +112,58 @@ def get_spotify_recommendations(emotion):
     except Exception as e:
         return [f"Spotify 추천 오류: {e}"]
 
+@st.cache_data(ttl=3600)
+def get_spotify_ai_recommendations(emotion):
+    spotify_creds = st.secrets.get("spotify", {})
+    client_id = spotify_creds.get("client_id")
+    client_secret = spotify_creds.get("client_secret")
+
+    if not client_id or not client_secret:
+        return ["Spotify 인증 정보가 Secrets에 없습니다."]
+
+    try:
+        client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
+        sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+
+        params = {
+            "행복": {"seed_genres": ["k-pop", "dance", "happy"], "target_valence": 0.8, "target_energy": 0.7},
+            "사랑": {"seed_genres": ["k-pop", "acoustic", "r-n-b"], "target_valence": 0.7, "target_energy": 0.5},
+            "슬픔": {"seed_genres": ["sad", "piano", "k-indie"], "target_valence": 0.2, "target_energy": 0.3},
+            "분노": {"seed_genres": ["rock", "k-rock", "metal"], "target_valence": 0.3, "target_energy": 0.9},
+            "힘듦": {"seed_genres": ["ambient", "classical", "acoustic"], "target_valence": 0.4, "target_energy": 0.2},
+            "놀람": {"seed_genres": ["pop", "electronic", "synth-pop"], "target_valence": 0.6, "target_energy": 0.8},
+        }
+
+        selected_params = params.get(emotion)
+        if not selected_params:
+            return ["AI가 추천할 장르를 찾지 못했어요."]
+
+        results = sp.recommendations(
+            seed_genres=selected_params["seed_genres"],
+            target_valence=selected_params["target_valence"],
+            target_energy=selected_params["target_energy"],
+            limit=10,
+            country="KR"
+        )
+
+        tracks = results['tracks']
+        if not tracks:
+            return ["AI가 추천할 노래를 찾지 못했어요."]
+
+        random_tracks = random.sample(tracks, min(3, len(tracks)))
+        return [f"{track['name']} - {track['artists'][0]['name']}" for track in random_tracks]
+
+    except Exception as e:
+        return [f"Spotify AI 추천 오류: {e}"]
+
+
 def recommend(final_emotion):
-    music_recs = get_spotify_recommendations(final_emotion)
+    # ⭐️ 방법 1: 내가 만든 플레이리스트에서 추천 (현재 활성화)
+    music_recs = get_spotify_playlist_recommendations(final_emotion)
+    
+    # ⭐️ 방법 2: Spotify AI에게 자동 추천받기 (비활성화)
+    # music_recs = get_spotify_ai_recommendations(final_emotion)
+
     recommendations = {
         "행복": {"책": ["기분을 관리하면 인생이 관리된다"], "영화": ["월터의 상상은 현실이 된다"]},
         "사랑": {"책": ["사랑의 기술"], "영화": ["어바웃 타임"]},
@@ -166,7 +216,7 @@ def handle_analyze_click(model, vectorizer):
 
 # --- 3. Streamlit UI 구성 ---
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.9)")
+st.title("📊 하루 감정 분석 리포트 (v7.11)")
 
 with st.expander("⚙️ 시스템 상태 확인"):
     if st.secrets.get("connections", {}).get("gsheets"):
