@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.6 - Secrets 진단 최종 강화)
+# diary_analyzer.py (v7.7 - Secrets 구조 변경 최종본)
 
 import streamlit as st
 import gspread
@@ -79,12 +79,13 @@ def analyze_diary_ml(model, vectorizer, text):
 
 @st.cache_data(ttl=3600)
 def get_spotify_recommendations(emotion):
-    # ⭐️ Secrets 키를 더 안전하게 확인하도록 수정
-    client_id = st.secrets.get("SPOTIPY_CLIENT_ID")
-    client_secret = st.secrets.get("SPOTIPY_CLIENT_SECRET")
+    # ⭐️ Secrets 구조에 맞게 접근 방식 수정
+    spotify_creds = st.secrets.get("spotify", {})
+    client_id = spotify_creds.get("client_id")
+    client_secret = spotify_creds.get("client_secret")
 
     if not client_id or not client_secret:
-        return ["Spotify 인증 정보가 Secrets에 없습니다."]
+        return ["Spotify 인증 정보가 Secrets에 없거나 잘못되었습니다."]
 
     try:
         client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
@@ -132,7 +133,6 @@ def save_feedback_to_gsheets(client, feedback_df):
         st.error(f"피드백 저장 중 오류 발생: {e}")
 
 def generate_random_diary():
-    # ... (내용 변경 없음)
     morning_starts = [ "아침 일찍 일어나 상쾌하게 하루를 시작했다.", "늦잠을 자서 허둥지둥 출근 준비를 했다.", "오늘은 재택근무라 여유롭게 아침을 맞이했다.", "아침부터 비가 와서 그런지 기분이 조금 가라앉았다." ]
     midday_events = [ "점심으로 먹은 파스타가 정말 맛있어서 기분이 좋았다.", "동료에게 칭찬을 들어서 뿌듯했다.", "생각보다 일이 일찍 끝나서 잠시 휴식을 즐겼다.", "카페에서 마신 커피가 유난히 향긋해서 기분이 전환됐다.", "오랜만에 친구와 점심 약속을 잡고 즐겁게 수다를 떨었다.", "오후 회의가 너무 길어져서 진이 빠졌다.", "사소한 실수 때문에 팀장님께 지적을 받아서 속상했다.", "갑작스러운 업무가 생겨 정신없이 바빴다.", "점심을 급하게 먹었더니 속이 더부룩하고 힘들었다.", "믿었던 동료와 의견 다툼이 있어서 마음이 상했다.", "오후 내내 조용히 내 업무에만 집중했다.", "오랜만에 서점에 들러서 책 구경을 했다.", "다음 주 계획을 미리 세우며 시간을 보냈다." ]
     evening_conclusions = [ "퇴근 후 운동을 하고 나니 몸은 힘들었지만 기분은 상쾌했다.", "자기 전 본 영화가 너무 감동적이어서 여운이 남는다.", "저녁에 맛있는 음식을 먹으며 하루의 스트레스를 풀었다.", "하루 종일 힘들었는데, 자기 전 들은 음악 덕분에 마음이 편안해졌다.", "별일 없이 무난하게 하루가 마무리되었다." ]
@@ -161,23 +161,21 @@ def handle_analyze_click(model, vectorizer):
 
 # --- 3. Streamlit UI 구성 ---
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.6)")
+st.title("📊 하루 감정 분석 리포트 (v7.7)")
 
-# ⭐️ --- Secrets 및 모델 로딩 상태 진단 --- ⭐️
+# ⭐️ --- 시스템 상태 확인 부분 수정 --- ⭐️
 with st.expander("⚙️ 시스템 상태 확인", expanded=True):
-    secrets_ok = True
     # Check for GSheets
     if st.secrets.get("connections", {}).get("gsheets"):
         st.success("✅ Google Sheets 인증 정보가 확인되었습니다.")
     else:
         st.error("❗️ Google Sheets 인증 정보('connections.gsheets')를 찾을 수 없습니다.")
-        secrets_ok = False
-    # Check for Spotify
-    if st.secrets.get("SPOTIPY_CLIENT_ID") and st.secrets.get("SPOTIPY_CLIENT_SECRET"):
+    
+    # ⭐️ Check for Spotify (새로운 구조에 맞게 수정)
+    if st.secrets.get("spotify", {}).get("client_id") and st.secrets.get("spotify", {}).get("client_secret"):
         st.success("✅ Spotify 인증 정보가 확인되었습니다.")
     else:
-        st.error("❗️ Spotify 인증 정보('SPOTIPY_CLIENT_ID' 또는 'SECRET')를 찾을 수 없거나 이름이 틀렸습니다.")
-        secrets_ok = False
+        st.error("❗️ Spotify 인증 정보('[spotify]' 섹션)를 찾을 수 없거나 키 이름이 틀렸습니다.")
     
     model, vectorizer = load_ml_resources()
     if model and vectorizer:
@@ -185,6 +183,7 @@ with st.expander("⚙️ 시스템 상태 확인", expanded=True):
     else:
         st.error("❗️ AI 모델 파일('sentiment_model.pkl')을 찾을 수 없습니다.")
 st.divider()
+
 
 if 'diary_text' not in st.session_state: st.session_state.diary_text = ""
 if 'analysis_results' not in st.session_state: st.session_state.analysis_results = None
@@ -197,10 +196,8 @@ with col2:
     st.button("🔄 랜덤 일기 생성", on_click=handle_random_click)
     st.button("🔍 내 하루 감정 분석하기", type="primary", on_click=handle_analyze_click, args=(model, vectorizer))
 
-# (이하 분석 결과 및 피드백 UI는 이전과 거의 동일)
 if st.session_state.analysis_results:
     if model and vectorizer:
-        # ... (이전과 동일)
         scores_data, _ = analyze_diary_ml(model, vectorizer, st.session_state.diary_text)
         df_scores = pd.DataFrame(scores_data).T
         if df_scores.sum().sum() > 0:
