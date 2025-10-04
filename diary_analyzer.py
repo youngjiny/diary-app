@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.17 - 인증 통합 최종본)
+# diary_analyzer.py (v7.18 - 캐싱 오류 수정 최종본)
 
 import streamlit as st
 import gspread
@@ -14,20 +14,21 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
 # --- 1. 기본 설정 (이전과 동일) ---
-# ... (생략)
 MODEL_PATH = Path("sentiment_model.pkl")
 VECTORIZER_PATH = Path("tfidf_vectorizer.pkl")
+
 try:
     font_path = "c:/Windows/Fonts/malgun.ttf"
     font_name = font_manager.FontProperties(fname=font_path).get_name()
     plt.rc('font', family=font_name)
 except FileNotFoundError:
     st.warning("Malgun Gothic 폰트를 찾을 수 없어 그래프의 한글이 깨질 수 있습니다.")
+
 EMOTIONS = ["행복", "사랑", "슬픔", "분노", "힘듦", "놀람"]
 TIMES = ["아침", "점심", "저녁"]
 TIME_KEYWORDS = { "아침": ["아침", "오전", "출근", "일어나서"], "점심": ["점심", "낮", "점심시간"], "저녁": ["저녁", "오후", "퇴근", "밤", "새벽", "자기 전", "꿈"],}
 
-# --- 2. 핵심 기능 함수 (⭐️ Spotify 인증 함수 통합) ---
+# --- 2. 핵심 기능 함수 ---
 @st.cache_resource
 def load_ml_resources():
     try:
@@ -49,7 +50,7 @@ def get_gsheets_connection():
     except Exception:
         return None
 
-# ⭐️⭐️ 1. Spotify 인증 클라이언트를 생성하는 함수를 하나로 통합 ⭐️⭐️
+# ⭐️ Spotify 클라이언트 생성 함수 (이 함수는 그대로 유지)
 @st.cache_resource
 def get_spotify_client():
     spotify_creds = st.secrets.get("spotify", {})
@@ -59,7 +60,6 @@ def get_spotify_client():
     if not client_id or not client_secret:
         st.error("Spotify 인증 정보가 Secrets에 설정되지 않았습니다.")
         return None
-
     try:
         client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
         sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
@@ -67,7 +67,6 @@ def get_spotify_client():
     except Exception as e:
         st.error(f"Spotify 클라이언트 생성 실패: {e}")
         return None
-
 
 @st.cache_data(ttl=60)
 def fetch_all_data_from_gsheets(_client):
@@ -97,8 +96,10 @@ def analyze_diary_ml(model, vectorizer, text):
         analysis_results.append({'sentence': sentence, 'predicted_emotion': prediction, 'predicted_time': current_time})
     return time_scores, analysis_results
 
+# ⭐️⭐️ 1. 추천 함수들이 sp_client를 인자로 받지 않도록 수정 ⭐️⭐️
 @st.cache_data(ttl=3600)
-def get_spotify_playlist_recommendations(sp_client, emotion):
+def get_spotify_playlist_recommendations(emotion):
+    sp_client = get_spotify_client() # 함수 안에서 직접 클라이언트 호출
     if not sp_client: return ["Spotify 연결 실패"]
     try:
         playlist_ids = {
@@ -117,7 +118,8 @@ def get_spotify_playlist_recommendations(sp_client, emotion):
         return [f"Spotify 추천 오류: {e}"]
 
 @st.cache_data(ttl=3600)
-def get_spotify_ai_recommendations(sp_client, emotion):
+def get_spotify_ai_recommendations(emotion):
+    sp_client = get_spotify_client() # 함수 안에서 직접 클라이언트 호출
     if not sp_client: return ["Spotify 연결 실패"]
     try:
         params = {
@@ -140,18 +142,18 @@ def get_spotify_ai_recommendations(sp_client, emotion):
     except Exception as e:
         return [f"Spotify AI 추천 오류: {e}"]
 
-def recommend(sp_client, final_emotion, method):
+def recommend(final_emotion, method):
     if method == 'AI 자동 추천':
-        music_recs = get_spotify_ai_recommendations(sp_client, final_emotion)
+        music_recs = get_spotify_ai_recommendations(final_emotion)
     else:
-        music_recs = get_spotify_playlist_recommendations(sp_client, final_emotion)
+        music_recs = get_spotify_playlist_recommendations(final_emotion)
     
     recommendations = { "행복": {"책": ["기분을 관리하면 인생이 관리된다"], "영화": ["월터의 상상은 현실이 된다"]}, "사랑": {"책": ["사랑의 기술"], "영화": ["어바웃 타임"]}, "슬픔": {"책": ["아몬드"], "영화": ["코코"]}, "분노": {"책": ["분노의 심리학"], "영화": ["성난 사람들 (드라마)"]}, "힘듦": {"책": ["죽고 싶지만 떡볶이는 먹고 싶어"], "영화": ["리틀 포레스트"]}, "놀람": {"책": ["데미안"], "영화": ["유전"]},}
     recs = recommendations.get(final_emotion, {"책": [], "영화": []})
     recs['음악'] = music_recs
     return recs
 
-# (이하 save_feedback_to_gsheets, generate_random_diary, 콜백 함수, UI 구성 등은 모두 이전 버전과 동일)
+# (이하 save_feedback_to_gsheets, generate_random_diary, 콜백 함수는 이전과 동일)
 def save_feedback_to_gsheets(client, feedback_df):
     try:
         spreadsheet = client.open("diary_app_feedback")
@@ -186,23 +188,26 @@ def handle_analyze_click(model, vectorizer):
         with st.spinner('AI가 일기를 분석하고 있습니다...'):
             _, results = analyze_diary_ml(model, vectorizer, diary_content)
             st.session_state.analysis_results = results
+
+# --- 3. Streamlit UI 구성 ---
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.17)")
-sp_client = get_spotify_client() # Spotify 클라이언트를 미리 생성
+st.title("📊 하루 감정 분석 리포트 (v7.18)")
+
 with st.expander("⚙️ 시스템 상태 확인"):
+    # (내용 변경 없음)
     if st.secrets.get("connections", {}).get("gsheets"): st.success("✅ Google Sheets 인증 정보가 확인되었습니다.")
     else: st.error("❗️ Google Sheets 인증 정보('connections.gsheets')를 찾을 수 없습니다.")
-    if sp_client:
-        st.success("✅ Spotify 인증 정보가 확인되었습니다.")
-    else:
-        st.error("❗️ Spotify 인증 정보('[spotify]' 섹션)를 찾을 수 없거나 인증에 실패했습니다.")
+    if st.secrets.get("spotify", {}).get("client_id") and st.secrets.get("spotify", {}).get("client_secret"): st.success("✅ Spotify 인증 정보가 확인되었습니다.")
+    else: st.error("❗️ Spotify 인증 정보('[spotify]' 섹션)를 찾을 수 없거나 키 이름이 틀렸습니다.")
     model, vectorizer = load_ml_resources()
     if model and vectorizer: st.success("✅ AI 모델 파일이 성공적으로 로드되었습니다.")
     else: st.error("❗️ AI 모델 파일('sentiment_model.pkl')을 찾을 수 없습니다.")
 st.divider()
+
 if 'diary_text' not in st.session_state: st.session_state.diary_text = ""
 if 'analysis_results' not in st.session_state: st.session_state.analysis_results = None
 if 'rec_method' not in st.session_state: st.session_state.rec_method = '내 플레이리스트'
+
 col1, col2 = st.columns([3, 1])
 with col1:
     st.text_area("오늘의 일기를 시간의 흐름에 따라 작성해보세요:", key='diary_text', height=250)
@@ -211,6 +216,7 @@ with col2:
     st.radio("음악 추천 방식 선택", ('내 플레이리스트', 'AI 자동 추천'), key='rec_method', horizontal=True)
     st.button("🔄 랜덤 일기 생성", on_click=handle_random_click)
     st.button("🔍 내 하루 감정 분석하기", type="primary", on_click=handle_analyze_click, args=(model, vectorizer))
+
 if st.session_state.analysis_results:
     if model and vectorizer:
         scores_data, _ = analyze_diary_ml(model, vectorizer, st.session_state.diary_text)
@@ -229,9 +235,12 @@ if st.session_state.analysis_results:
             with res_col2:
                 st.dataframe(df_scores.style.format("{:.0f}").background_gradient(cmap='viridis'))
                 st.success(f"오늘 하루를 종합해 보면, **'{final_emotion}'**의 감정이 가장 컸네요!")
+            
             st.divider()
             st.subheader(f"'{final_emotion}' 감정을 위한 오늘의 추천")
-            recs = recommend(sp_client, final_emotion, st.session_state.rec_method)
+            # ⭐️⭐️ 2. recommend 함수 호출 시 sp_client를 전달하지 않도록 수정 ⭐️⭐️
+            recs = recommend(final_emotion, st.session_state.rec_method)
+            
             rec_col1, rec_col2, rec_col3 = st.columns(3)
             with rec_col1:
                 st.write("📚 **이런 책은 어때요?**")
@@ -242,6 +251,7 @@ if st.session_state.analysis_results:
             with rec_col3:
                 st.write("🎬 **이런 영화/드라마도 추천해요?**")
                 for item in recs['영화']: st.write(f"- {item}")
+
             st.divider()
             st.subheader("🔍 분석 결과 피드백")
             feedback_data = []
@@ -270,6 +280,7 @@ if st.session_state.analysis_results:
                         st.session_state.analysis_results = None; st.rerun()
                     else: st.info("수정된 내용이 없네요. AI가 잘 맞췄나 보네요! 😄")
                 else: st.error("Google Sheets에 연결할 수 없습니다.")
+
 st.divider()
 with st.expander("피드백 저장 현황 보기 (Google Sheets)"):
     client = get_gsheets_connection()
