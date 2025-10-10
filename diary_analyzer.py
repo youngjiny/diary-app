@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.21 - 최종 해결)
+# diary_analyzer.py (v8.0 - 최종 안정화 버전)
 
 import streamlit as st
 import gspread
@@ -91,7 +91,7 @@ def analyze_diary_ml(model, vectorizer, text):
         analysis_results.append({'sentence': sentence, 'predicted_emotion': prediction, 'predicted_time': current_time})
     return time_scores, analysis_results
 
-# ⭐️ 캐싱(@st.cache_data)을 제거하여 매번 새로 실행되도록 함
+@st.cache_data(ttl=3600)
 def get_spotify_playlist_recommendations(emotion):
     sp_client = get_spotify_client()
     if not sp_client: return ["Spotify 연결 실패"]
@@ -111,7 +111,8 @@ def get_spotify_playlist_recommendations(emotion):
     except Exception as e:
         return [f"Spotify 추천 오류: {e}"]
 
-# ⭐️ 캐싱(@st.cache_data)을 제거하여 매번 새로 실행되도록 함
+# ⭐️⭐️⭐️ AI 추천 함수를 안정적인 '카테고리 탐색' 방식으로 최종 확정 ⭐️⭐️⭐️
+@st.cache_data(ttl=3600)
 def get_spotify_ai_recommendations(emotion):
     sp_client = get_spotify_client()
     if not sp_client:
@@ -135,7 +136,9 @@ def get_spotify_ai_recommendations(emotion):
                 matched_playlists.append(p)
         
         if not matched_playlists:
-            return [f"'{emotion}' 분위기의 플레이리스트를 찾지 못했어요."]
+            return [f"'{emotion}' 분위기의 관련 플레이리스트를 찾지 못했어요. 대신 전체 '분위기' 플레이리스트에서 추천합니다."]
+            # 매칭되는 플레이리스트가 없을 경우, 전체 'mood' 카테고리에서 랜덤 선택
+            matched_playlists = playlists
 
         random_playlist = random.choice(matched_playlists)
         playlist_id = random_playlist['id']
@@ -162,6 +165,7 @@ def recommend(final_emotion, method):
     recs['음악'] = music_recs
     return recs
 
+# (이하 모든 다른 함수와 UI 코드는 이전 버전과 동일합니다)
 def save_feedback_to_gsheets(client, feedback_df):
     try:
         spreadsheet = client.open("diary_app_feedback")
@@ -197,7 +201,7 @@ def handle_analyze_click(model, vectorizer):
             _, results = analyze_diary_ml(model, vectorizer, diary_content)
             st.session_state.analysis_results = results
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.21)")
+st.title("📊 하루 감정 분석 리포트 (v8.0)")
 with st.expander("⚙️ 시스템 상태 확인"):
     if st.secrets.get("connections", {}).get("gsheets"): st.success("✅ Google Sheets 인증 정보가 확인되었습니다.")
     else: st.error("❗️ Google Sheets 인증 정보('connections.gsheets')를 찾을 수 없습니다.")
