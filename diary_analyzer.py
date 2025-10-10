@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.19 - 최종 해결)
+# diary_analyzer.py (v7.20 - Spotify 카테고리 ID 직접 지정)
 
 import streamlit as st
 import gspread
@@ -13,17 +13,15 @@ import random
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
-# --- 1. 기본 설정 ---
+# --- 1. 기본 설정 (이전과 동일) ---
 MODEL_PATH = Path("sentiment_model.pkl")
 VECTORIZER_PATH = Path("tfidf_vectorizer.pkl")
-
 try:
     font_path = "c:/Windows/Fonts/malgun.ttf"
     font_name = font_manager.FontProperties(fname=font_path).get_name()
     plt.rc('font', family=font_name)
 except FileNotFoundError:
     st.warning("Malgun Gothic 폰트를 찾을 수 없어 그래프의 한글이 깨질 수 있습니다.")
-
 EMOTIONS = ["행복", "사랑", "슬픔", "분노", "힘듦", "놀람"]
 TIMES = ["아침", "점심", "저녁"]
 TIME_KEYWORDS = { "아침": ["아침", "오전", "출근", "일어나서"], "점심": ["점심", "낮", "점심시간"], "저녁": ["저녁", "오후", "퇴근", "밤", "새벽", "자기 전", "꿈"],}
@@ -111,31 +109,25 @@ def get_spotify_playlist_recommendations(emotion):
     except Exception as e:
         return [f"Spotify 추천 오류: {e}"]
 
-# ⭐️⭐️⭐️ AI 추천 함수 최종 수정 (카테고리 검색 방식으로 변경) ⭐️⭐️⭐️
 @st.cache_data(ttl=3600)
 def get_spotify_ai_recommendations(emotion):
     sp_client = get_spotify_client()
     if not sp_client:
         return ["Spotify 연결에 실패했습니다."]
     try:
-        # 감정별 검색 키워드 설정
         emotion_keywords = {
-            "행복": ["행복", "신나는", "기분 좋은"],
-            "사랑": ["사랑", "설렘", "로맨틱"],
-            "슬픔": ["슬픈", "이별", "우울"],
-            "분노": ["화날 때", "스트레스", "분노"],
-            "힘듦": ["위로", "지칠 때", "힘들 때"],
-            "놀람": ["파티", "깜짝", "신나는"],
+            "행복": ["행복", "신나는", "기분 좋은"], "사랑": ["사랑", "설렘", "로맨틱"],
+            "슬픔": ["슬픈", "이별", "우울"], "분노": ["화날 때", "스트레스", "분노"],
+            "힘듦": ["위로", "지칠 때", "힘들 때"], "놀람": ["파티", "깜짝", "신나는"],
         }
         keywords = emotion_keywords.get(emotion)
         if not keywords:
             return ["AI가 추천할 키워드를 찾지 못했어요."]
 
-        # 1. '분위기(mood)' 카테고리에서 플레이리스트 목록 가져오기
-        results = sp_client.category_playlists(category_id='mood', country='KR', limit=50)
+        # ⭐️ 'mood' 라는 이름 대신 공식 카테고리 ID '0JQ5DAqbMKFzHmL4tf05da'를 직접 사용
+        results = sp_client.category_playlists(category_id='0JQ5DAqbMKFzHmL4tf05da', country='KR', limit=50)
         playlists = results['playlists']['items']
 
-        # 2. 감정 키워드와 일치하는 플레이리스트 필터링
         matched_playlists = []
         for p in playlists:
             if any(keyword in p['name'] for keyword in keywords):
@@ -144,20 +136,16 @@ def get_spotify_ai_recommendations(emotion):
         if not matched_playlists:
             return [f"'{emotion}' 분위기의 플레이리스트를 찾지 못했어요."]
 
-        # 3. 찾은 플레이리스트 중 하나를 랜덤으로 선택
         random_playlist = random.choice(matched_playlists)
         playlist_id = random_playlist['id']
 
-        # 4. 해당 플레이리스트의 노래 목록 가져오기
         results = sp_client.playlist_items(playlist_id, limit=50)
         tracks = [item['track'] for item in results['items'] if item['track']]
         if not tracks:
             return ["선택된 플레이리스트에 노래가 없어요."]
 
-        # 5. 랜덤으로 3곡 추천
         random_tracks = random.sample(tracks, min(3, len(tracks)))
         return [f"{track['name']} - {track['artists'][0]['name']}" for track in random_tracks]
-
     except Exception as e:
         return [f"Spotify AI 추천 오류: {e}"]
 
@@ -172,7 +160,6 @@ def recommend(final_emotion, method):
     recs['음악'] = music_recs
     return recs
 
-# (이하 나머지 모든 함수와 UI 코드는 이전 버전과 동일합니다)
 def save_feedback_to_gsheets(client, feedback_df):
     try:
         spreadsheet = client.open("diary_app_feedback")
@@ -208,7 +195,7 @@ def handle_analyze_click(model, vectorizer):
             _, results = analyze_diary_ml(model, vectorizer, diary_content)
             st.session_state.analysis_results = results
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.19)")
+st.title("📊 하루 감정 분석 리포트 (v7.20)")
 with st.expander("⚙️ 시스템 상태 확인"):
     if st.secrets.get("connections", {}).get("gsheets"): st.success("✅ Google Sheets 인증 정보가 확인되었습니다.")
     else: st.error("❗️ Google Sheets 인증 정보('connections.gsheets')를 찾을 수 없습니다.")
@@ -229,7 +216,6 @@ with col2:
     st.radio("음악 추천 방식 선택", ('내 플레이리스트', 'AI 자동 추천'), key='rec_method', horizontal=True)
     st.button("🔄 랜덤 일기 생성", on_click=handle_random_click)
     st.button("🔍 내 하루 감정 분석하기", type="primary", on_click=handle_analyze_click, args=(model, vectorizer))
-# 테스트 버튼은 이제 필요 없으므로 삭제합니다.
 if st.session_state.analysis_results:
     if model and vectorizer:
         scores_data, _ = analyze_diary_ml(model, vectorizer, st.session_state.diary_text)
