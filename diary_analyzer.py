@@ -1,4 +1,4 @@
-# diary_analyzer.py (v7.20 - Spotify 카테고리 ID 직접 지정)
+# diary_analyzer.py (v7.21 - 최종 해결)
 
 import streamlit as st
 import gspread
@@ -13,15 +13,17 @@ import random
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
-# --- 1. 기본 설정 (이전과 동일) ---
+# --- 1. 기본 설정 ---
 MODEL_PATH = Path("sentiment_model.pkl")
 VECTORIZER_PATH = Path("tfidf_vectorizer.pkl")
+
 try:
     font_path = "c:/Windows/Fonts/malgun.ttf"
     font_name = font_manager.FontProperties(fname=font_path).get_name()
     plt.rc('font', family=font_name)
 except FileNotFoundError:
     st.warning("Malgun Gothic 폰트를 찾을 수 없어 그래프의 한글이 깨질 수 있습니다.")
+
 EMOTIONS = ["행복", "사랑", "슬픔", "분노", "힘듦", "놀람"]
 TIMES = ["아침", "점심", "저녁"]
 TIME_KEYWORDS = { "아침": ["아침", "오전", "출근", "일어나서"], "점심": ["점심", "낮", "점심시간"], "저녁": ["저녁", "오후", "퇴근", "밤", "새벽", "자기 전", "꿈"],}
@@ -89,7 +91,7 @@ def analyze_diary_ml(model, vectorizer, text):
         analysis_results.append({'sentence': sentence, 'predicted_emotion': prediction, 'predicted_time': current_time})
     return time_scores, analysis_results
 
-@st.cache_data(ttl=3600)
+# ⭐️ 캐싱(@st.cache_data)을 제거하여 매번 새로 실행되도록 함
 def get_spotify_playlist_recommendations(emotion):
     sp_client = get_spotify_client()
     if not sp_client: return ["Spotify 연결 실패"]
@@ -109,7 +111,7 @@ def get_spotify_playlist_recommendations(emotion):
     except Exception as e:
         return [f"Spotify 추천 오류: {e}"]
 
-@st.cache_data(ttl=3600)
+# ⭐️ 캐싱(@st.cache_data)을 제거하여 매번 새로 실행되도록 함
 def get_spotify_ai_recommendations(emotion):
     sp_client = get_spotify_client()
     if not sp_client:
@@ -124,7 +126,6 @@ def get_spotify_ai_recommendations(emotion):
         if not keywords:
             return ["AI가 추천할 키워드를 찾지 못했어요."]
 
-        # ⭐️ 'mood' 라는 이름 대신 공식 카테고리 ID '0JQ5DAqbMKFzHmL4tf05da'를 직접 사용
         results = sp_client.category_playlists(category_id='0JQ5DAqbMKFzHmL4tf05da', country='KR', limit=50)
         playlists = results['playlists']['items']
 
@@ -146,6 +147,7 @@ def get_spotify_ai_recommendations(emotion):
 
         random_tracks = random.sample(tracks, min(3, len(tracks)))
         return [f"{track['name']} - {track['artists'][0]['name']}" for track in random_tracks]
+
     except Exception as e:
         return [f"Spotify AI 추천 오류: {e}"]
 
@@ -195,7 +197,7 @@ def handle_analyze_click(model, vectorizer):
             _, results = analyze_diary_ml(model, vectorizer, diary_content)
             st.session_state.analysis_results = results
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v7.20)")
+st.title("📊 하루 감정 분석 리포트 (v7.21)")
 with st.expander("⚙️ 시스템 상태 확인"):
     if st.secrets.get("connections", {}).get("gsheets"): st.success("✅ Google Sheets 인증 정보가 확인되었습니다.")
     else: st.error("❗️ Google Sheets 인증 정보('connections.gsheets')를 찾을 수 없습니다.")
