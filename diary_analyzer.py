@@ -1,4 +1,4 @@
-# diary_analyzer.py (v8.2 - 추천 캐싱 제거)
+# diary_analyzer.py (v8.3 - 검색 결과 안정성 강화)
 
 import streamlit as st
 import gspread
@@ -91,7 +91,6 @@ def analyze_diary_ml(model, vectorizer, text):
         analysis_results.append({'sentence': sentence, 'predicted_emotion': prediction, 'predicted_time': current_time})
     return time_scores, analysis_results
 
-# ⭐️ 캐싱 기능 제거
 def get_spotify_playlist_recommendations(emotion):
     sp_client = get_spotify_client()
     if not sp_client: return ["Spotify 연결 실패"]
@@ -104,14 +103,13 @@ def get_spotify_playlist_recommendations(emotion):
         playlist_id = playlist_ids.get(emotion)
         if not playlist_id: return ["추천할 플레이리스트가 없어요."]
         results = sp_client.playlist_items(playlist_id, limit=50)
-        tracks = [item['track'] for item in results['items'] if item['track']]
+        tracks = [item['track'] for item in results['items'] if item and item['track']]
         if not tracks: return ["플레이리스트에 노래가 없어요."]
         random_tracks = random.sample(tracks, min(3, len(tracks)))
         return [f"{track['name']} - {track['artists'][0]['name']}" for track in random_tracks]
     except Exception as e:
         return [f"Spotify 추천 오류: {e}"]
 
-# ⭐️ 캐싱 기능 제거
 def get_spotify_ai_recommendations(emotion):
     sp_client = get_spotify_client()
     if not sp_client:
@@ -127,16 +125,22 @@ def get_spotify_ai_recommendations(emotion):
             return ["AI가 추천할 키워드를 찾지 못했어요."]
 
         results = sp_client.search(q=query, type='playlist', limit=20, market="KR")
-        playlists = results['playlists']['items']
         
+        # ⭐️⭐️⭐️ 검색 결과 안정성 강화 코드 ⭐️⭐️⭐️
+        playlists_dict = results.get('playlists')
+        if not playlists_dict:
+            return ["Spotify 검색 결과에서 'playlists' 항목을 찾을 수 없습니다."]
+        
+        playlists = playlists_dict.get('items')
         if not playlists:
             return [f"'{query}' 관련 플레이리스트를 찾지 못했어요."]
+        # ⭐️⭐️⭐️ 여기까지 ⭐️⭐️⭐️
 
         random_playlist = random.choice(playlists)
         playlist_id = random_playlist['id']
 
         results = sp_client.playlist_items(playlist_id, limit=50)
-        tracks = [item['track'] for item in results['items'] if item['track']]
+        tracks = [item['track'] for item in results['items'] if item and item['track']]
         if not tracks:
             return ["선택된 플레이리스트에 노래가 없어요."]
 
@@ -192,7 +196,7 @@ def handle_analyze_click(model, vectorizer):
             _, results = analyze_diary_ml(model, vectorizer, diary_content)
             st.session_state.analysis_results = results
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v8.2)")
+st.title("📊 하루 감정 분석 리포트 (v8.3)")
 with st.expander("⚙️ 시스템 상태 확인"):
     if st.secrets.get("connections", {}).get("gsheets"): st.success("✅ Google Sheets 인증 정보가 확인되었습니다.")
     else: st.error("❗️ Google Sheets 인증 정보('connections.gsheets')를 찾을 수 없습니다.")
