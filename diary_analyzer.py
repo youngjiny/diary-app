@@ -1,4 +1,4 @@
-# diary_analyzer.py (v8.4 - AI 추천 최종 안정화)
+# diary_analyzer.py (v8.5 - 최종 완성본)
 
 import streamlit as st
 import gspread
@@ -110,43 +110,48 @@ def get_spotify_playlist_recommendations(emotion):
     except Exception as e:
         return [f"Spotify 추천 오류: {e}"]
 
-# ⭐️ AI 추천 함수 안정성 강화
+# ⭐️⭐️ 1. API 요청 부분: 플레이리스트 '후보'를 찾는 함수 (캐싱 적용)
+@st.cache_data(ttl=3600) # 1시간에 한 번만 Spotify에 플레이리스트 목록을 요청
+def get_ai_playlist_pool(_sp_client, emotion):
+    emotion_keywords = {
+        "행복": ["행복", "신나는", "기분 좋은"], "사랑": ["사랑", "설렘", "로맨틱"],
+        "슬픔": ["슬픈", "이별", "우울"], "분노": ["화날 때", "스트레스", "분노"],
+        "힘듦": ["위로", "지칠 때", "힘들 때"], "놀람": ["파티", "깜짝", "신나는"],
+    }
+    query = emotion_keywords.get(emotion)
+    if not query: return None
+
+    results = _sp_client.search(q=query, type='playlist', limit=20, market="KR")
+    if not results: return None
+
+    playlists_dict = results.get('playlists')
+    if not playlists_dict: return None
+    
+    return playlists_dict.get('items')
+
+# ⭐️⭐️ 2. 결과 조합 부분: 후보 중에서 랜덤 선택 (캐싱 없음)
 def get_spotify_ai_recommendations(emotion):
     sp_client = get_spotify_client()
     if not sp_client:
         return ["Spotify 연결에 실패했습니다."]
     try:
-        emotion_keywords = {
-            "행복": ["행복", "신나는", "기분 좋은"], "사랑": ["사랑", "설렘", "로맨틱"],
-            "슬픔": ["슬픈", "이별", "우울"], "분노": ["화날 때", "스트레스", "분노"],
-            "힘듦": ["위로", "지칠 때", "힘들 때"], "놀람": ["파티", "깜짝", "신나는"],
-        }
-        query = emotion_keywords.get(emotion)
-        if not query:
-            return ["AI가 추천할 키워드를 찾지 못했어요."]
+        # 1단계: 캐싱된 함수를 통해 플레이리스트 '후보 목록'을 안전하게 가져옴
+        playlist_pool = get_ai_playlist_pool(sp_client, emotion)
+        
+        if not playlist_pool:
+            return [f"'{emotion}' 관련 플레이리스트를 찾지 못했어요."]
 
-        results = sp_client.search(q=query, type='playlist', limit=20, market="KR")
-        
-        # ⭐️⭐️⭐️ 검색 결과가 비어있는지(None) 확인하는 로직 추가 ⭐️⭐️⭐️
-        if not results:
-            return [f"'{query}'에 대한 검색 결과가 없습니다."]
-
-        playlists_dict = results.get('playlists')
-        if not playlists_dict:
-            return ["Spotify 검색 결과에서 'playlists' 항목을 찾을 수 없습니다."]
-        
-        playlists = playlists_dict.get('items')
-        if not playlists:
-            return [f"'{query}' 관련 플레이리스트를 찾지 못했어요."]
-        
-        random_playlist = random.choice(playlists)
+        # 2단계: 후보 목록 중에서 플레이리스트 1개 랜덤 선택
+        random_playlist = random.choice(playlist_pool)
         playlist_id = random_playlist['id']
 
+        # 3단계: 해당 플레이리스트의 노래 목록 가져오기
         results = sp_client.playlist_items(playlist_id, limit=50)
         tracks = [item['track'] for item in results['items'] if item and item['track']]
         if not tracks:
             return ["선택된 플레이리스트에 노래가 없어요."]
 
+        # 4단계: 랜덤으로 3곡 추천
         random_tracks = random.sample(tracks, min(3, len(tracks)))
         return [f"{track['name']} - {track['artists'][0]['name']}" for track in random_tracks]
 
@@ -164,6 +169,7 @@ def recommend(final_emotion, method):
     recs['음악'] = music_recs
     return recs
 
+# (이하 모든 다른 함수와 UI 코드는 이전 버전과 동일합니다)
 def save_feedback_to_gsheets(client, feedback_df):
     try:
         spreadsheet = client.open("diary_app_feedback")
@@ -199,7 +205,7 @@ def handle_analyze_click(model, vectorizer):
             _, results = analyze_diary_ml(model, vectorizer, diary_content)
             st.session_state.analysis_results = results
 st.set_page_config(layout="wide")
-st.title("📊 하루 감정 분석 리포트 (v8.4)")
+st.title("📊 하루 감정 분석 리포트 (v8.5)")
 with st.expander("⚙️ 시스템 상태 확인"):
     if st.secrets.get("connections", {}).get("gsheets"): st.success("✅ Google Sheets 인증 정보가 확인되었습니다.")
     else: st.error("❗️ Google Sheets 인증 정보('connections.gsheets')를 찾을 수 없습니다.")
